@@ -42,6 +42,23 @@ class Dev(SentinelCog):
         )
         await ctx.send(embed=embed)
 
+    @commands.command()
+    @commands.is_owner()
+    async def sql(self, ctx: SentinelContext, query: str, exec_type: str = "fetch"):
+        if exec_type == "fetch":
+            result = await self.bot.apg.fetch(query)
+        elif exec_type == "execute":
+            result = await self.bot.apg.execute(query)
+        else:
+            await ctx.send("Invalid exec_type")
+            return
+        embed = ctx.embed(
+            title=f"SQL Query {exec_type} \N{White Heavy Check Mark}",
+            description=f"**Query:** {query}\n**Result:\n** {str(result)[:4000]}",
+        )
+        await ctx.send(embed=embed)
+
+
 
 async def setup(bot: Sentinel):
     await bot.add_cog(Dev(bot))
