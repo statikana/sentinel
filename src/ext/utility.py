@@ -3,7 +3,10 @@ from discord.ext import commands
 import time
 
 from ..sentinel import Sentinel, SentinelCog, SentinelContext
-
+from config import WOLFRAM_API_URL
+from env import WOLFRAM_APPID
+from urllib import parse
+import aiohttp
 
 class Utility(SentinelCog):
     def __init__(self, bot: Sentinel):
@@ -26,6 +29,22 @@ class Utility(SentinelCog):
         embed = ctx.embed(
             title="Pong! \N{Table Tennis Paddle and Ball}", description=description
         )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command()
+    @commands.cooldown(1, 90, commands.BucketType.user)
+    async def wolfram(self, ctx: SentinelContext, *, question: str):
+        question = parse.quote_plus(question)
+        url = f"{WOLFRAM_API_URL}"
+        url += f"?appid={WOLFRAM_APPID}&i={question}"
+
+        try:
+            response = await self.bot.session.get(url)
+            title = (await response.read()).decode("utf-8")
+        except:
+            title = "Something happened... try asking a better question?"
+
+        embed = ctx.embed(title=title)
         await ctx.send(embed=embed)
 
 
