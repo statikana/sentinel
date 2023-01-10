@@ -1,63 +1,90 @@
-from typing import Optional
 import discord
 from discord.ext import commands
-from discord.app_commands import describe, Range
+from typing import Optional, Sequence
 
-from ..dev.bot_util  import load_extensions
-
-from ..dev.bot_typing import MISSING
-from ..dev.bot_abc import Sentinel, SentinelContext
-from ..dev.ext_abc import SentinelCog, SentinelView, Paginator
+from ..sentinel import T, Sentinel, SentinelCog, SentinelContext
+from ..command_util import Paginator
 
 
 class Dev(SentinelCog):
     def __init__(self, bot: Sentinel):
-        super().__init__(bot, guild_ids={871913539936329768})
-    
+        super().__init__(bot, "\N{Personal Computer}", hidden=True)
 
     @commands.command()
-    async def test(self, ctx: SentinelContext):
-        await ctx.send("test")
-    
-
-    @commands.command()
-    @commands.is_owner()
-    async def sync(self, ctx: SentinelContext, guild_id: Optional[int]):
-        await self.bot.tree.sync(guild=discord.Object(id=guild_id) if guild_id else None)
-        embed = ctx.embed(
-            title="Synced \N{White Heavy Check Mark}",
-            description=f"Synced {guild_id or 'all guild'}'s commands",
-        )
-
-    
-    @commands.command()
-    @commands.is_owner()
     async def reload(self, ctx: SentinelContext):
-        exts, utils = await load_extensions(self.bot)
-        desc = "\n".join((f"**{ex}**" for ex in exts))
-        desc += "\n" + "\n".join((f"*{ut}*" for ut in utils))
+        exts, utils = await self.bot.reload_extensions()
+        description = [f"**{e}**" for e in exts]
+        description.extend([f"*{u}*" for u in utils])
         embed = ctx.embed(
-            title="Reloaded \N{White Heavy Check Mark}",
-            description=desc,
+            title="Successful Reload \N{White Heavy Check Mark}",
+            description="\n".join(description),
         )
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.is_owner()
-    async def sql(self, ctx: SentinelContext, query: str, exec_type: str = "fetch"):
-        if exec_type == "fetch":
-            result = await self.bot.apg.fetch(query)
-        elif exec_type == "execute":
-            result = await self.bot.apg.execute(query)
-        else:
-            await ctx.send("Invalid exec_type")
-            return
+    async def sync(self, ctx: SentinelContext, guild_id: Optional[int]):
+        await self.bot.tree.sync(guild=discord.Object(guild_id) if guild_id else None)
         embed = ctx.embed(
-            title=f"SQL Query {exec_type} \N{White Heavy Check Mark}",
-            description=f"**Query:** {query}\n**Result:\n** {str(result)[:4000]}",
+            title="Successful Sync \N{White Heavy Check Mark}",
+            description=f"Synced {guild_id or 'all'}",
         )
         await ctx.send(embed=embed)
 
+    @commands.group()
+    async def blacklist(self, ctx: SentinelContext):
+        """Shows the blacklist"""
+        if ctx.invoked_subcommand:
+            return
+
+        class BLDisplay(Paginator):
+            async def embed(self, displayed_values: tuple):
+                description = "\n".join(
+                    f"`{i + self.display_values_index_start + 1}:` <@{user_id}> | `{user_id}`"
+                    for i, user_id in enumerate(displayed_values)
+                )
+                return ctx.embed(
+                    title=f"`Blacklisted Users:` Page `{self.current_page + 1}/{self.max_page + 1}`",
+                    description=description,
+                )
+
+        opts = tuple(
+            user["user_id"]
+            for user in await self.bot.apg.fetch("SELECT user_id FROM blacklist")
+        )
+        view = BLDisplay(ctx, opts, 10)
+        embed = await view.embed(view.displayed_values)
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
+        await view.update()
+
+    @blacklist.command()
+    async def add(self, ctx: SentinelContext, user: discord.User):
+        """Add a user to the blacklist"""
+        await self.bot.apg.execute("INSERT INTO blacklist VALUES ($1)", user.id)
+        embed = ctx.embed(
+            title="Successful Blacklist \N{White Heavy Check Mark}",
+            description=f"Blacklisted {user.mention} | `{user}`",
+        )
+        await ctx.send(embed=embed)
+
+    @blacklist.command()
+    async def remove(self, ctx: SentinelContext, user: discord.User):
+        """Remove a user from the blacklist"""
+        await self.bot.apg.execute("DELETE FROM blacklist WHERE user_id = $1", user.id)
+        embed = ctx.embed(
+            title="Successful Whitelist \N{White Heavy Check Mark}",
+            description=f"Whitelisted {user.mention} | `{user}`",
+        )
+
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def sql(self, ctx: SentinelContext, option: str, *, command: str):
+        if option == "fetch":
+            await ctx.send(str(list(await self.bot.apg.fetch(command))))
+        else:
+            await self.bot.apg.execute(command)
+            await ctx.send("Executed: " + command)
 
 
 async def setup(bot: Sentinel):
