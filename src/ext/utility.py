@@ -4,6 +4,7 @@ from discord.ext import commands
 import time
 
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
+from ..command_util import ParamDefaults
 from config import READTHEDOCS_URL, WOLFRAM_API_URL
 from env import WOLFRAM_APPID
 from urllib import parse
@@ -63,22 +64,18 @@ class Utility(SentinelCog):
 
     @commands.hybrid_command()
     @describe(
-        user="The user you want to get the avatar of. Defaults to the author of the command"
+        member="The user you want to get the avatar of. Defaults to the author of the command"
     )
     async def avatar(
         self,
         ctx: SentinelContext,
-        user=commands.param(
-            converter=discord.User,
-            default=lambda ctx: ctx.author,
-            displayed_default="<author>",
-        ),
+        member: discord.Member = ParamDefaults.member,
     ):
         embed = ctx.embed(
-            title=f"`{user}`'s Avatar", description="Showing Guild Avatar"
+            title=f"`{member}`'s Avatar", description="Showing Guild Avatar"
         )
-        view = AvatarGuildView(ctx, user)
-        embed.set_image(url=user.display_avatar)
+        view = AvatarGuildView(ctx, member)
+        embed.set_image(url=member.display_avatar)
         await ctx.send(embed=embed, view=view)
 
     @commands.hybrid_command()
@@ -150,11 +147,7 @@ class Utility(SentinelCog):
     async def roles(
         self,
         ctx: SentinelContext,
-        member: discord.Member = commands.param(
-            converter=discord.Member,
-            default=lambda ctx: ctx.author,
-            displayed_default="<author>",
-        ),
+        member: discord.Member = ParamDefaults.member
     ):
         description = f"**Highest Role:** {member.top_role.mention}\n"
         description += f"-- **All Roles** [*Descending*] --\n" + "\n".join(
@@ -170,36 +163,36 @@ class Utility(SentinelCog):
 
 
 class AvatarGuildView(SentinelView):
-    def __init__(self, ctx: SentinelContext, user: discord.User):
+    def __init__(self, ctx: SentinelContext, member: discord.Member):
         super().__init__(ctx)
-        self.user = user
+        self.member = member
         self.guild = True
 
     @discord.ui.button(label="View Global Avatar", style=discord.ButtonStyle.grey)
     async def global_avatar(self, itx: discord.Interaction, button: discord.ui.Button):
         embed = self.ctx.embed(
-            title=f"`{self.user}`'s Avatar", description="Showing Global Avatar"
+            title=f"`{self.member}`'s Avatar", description="Showing Global Avatar"
         )
-        embed.set_image(url=(self.user.avatar or self.user.display_avatar))
+        embed.set_image(url=(self.member.avatar or self.member.display_avatar))
         await itx.response.edit_message(
-            embed=embed, view=AvatarGlobalView(self.ctx, self.user)
+            embed=embed, view=AvatarGlobalView(self.ctx, self.member)
         )
 
 
 class AvatarGlobalView(SentinelView):
-    def __init__(self, ctx: SentinelContext, user: discord.User):
+    def __init__(self, ctx: SentinelContext, member: discord.Member):
         super().__init__(ctx)
-        self.user = user
+        self.member = member
         self.guild = False
 
     @discord.ui.button(label="View Guild Avatar", style=discord.ButtonStyle.grey)
     async def guild_avatar(self, itx: discord.Interaction, button: discord.ui.Button):
         embed = self.ctx.embed(
-            title=f"`{self.user}`'s Avatar", description="Showing Guild Avatar"
+            title=f"`{self.member}`'s Avatar", description="Showing Guild Avatar"
         )
-        embed.set_image(url=self.user.display_avatar)
+        embed.set_image(url=self.member.display_avatar)
         await itx.response.edit_message(
-            embed=embed, view=AvatarGuildView(self.ctx, self.user)
+            embed=embed, view=AvatarGuildView(self.ctx, self.member)
         )
 
 

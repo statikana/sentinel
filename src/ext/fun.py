@@ -19,6 +19,7 @@ class Fun(SentinelCog):
         lower="The lower bound of the range, 0-10000 [inclusive]",
         upper="The upper bound of the range, 0-10000 [inclusive]",
         maximum_attempts="The maximum number of attempts you can have, 1-20 [inclusive]. Defaults to 3",
+        gamble_amount="The amount of money you want to gamble. The riskier the game, the more your money will be multiplied! Defaults to 0",
     )
     async def highlow(
         self,
@@ -26,16 +27,18 @@ class Fun(SentinelCog):
         lower: Range[int, 0, 10000],
         upper: Range[int, 0, 10000],
         maximum_attempts: Range[int, 1, 20] = 3,
+        gamble_amount: int = 0,
     ):
         """Try to guess a number between a given range!"""
         attempts = 0
+        gamble_amount *= round((upper - lower) / maximum_attempts) # simple formula to make the game more risky the higher the range is and the less attempts you have
+
+        number = random.randint(lower, upper)
 
         if lower > upper:
             raise commands.BadArgument("Lower bound must be less than upper bound")
-        if lower + 5 > upper:
+        if lower + 10 > upper:
             raise commands.BadArgument("You make it too easy!")
-
-        number = random.randint(lower, upper)
 
         embed = ctx.embed(
             title=f"Guess a Number between `{lower}` and `{upper}`...",
@@ -134,7 +137,6 @@ class Fun(SentinelCog):
                 formatted_guesses += "\N{White Heavy Check Mark}"
             formatted_guesses += "\n"
         return formatted_guesses
-
 
 async def setup(bot: Sentinel):
     await bot.add_cog(Fun(bot))

@@ -73,11 +73,11 @@ class Sentinel(commands.Bot):
 
     async def setup_hook(self) -> None:
         logging.info("Sentinel v" + ".".join(__version__) + " Online")
-        await self.reload_extensions()
         await self.connect_db()
         await self.connect_session()
         await self.prepare_databases()
         await self.connect_driver()
+        await self.reload_extensions()
 
     async def reload_extensions(
         self, ext_dir: str = ".\\src\\ext"
@@ -126,21 +126,7 @@ class Sentinel(commands.Bot):
         return await super().on_message(message)
 
     async def prepare_databases(self):
-        await self.apg.execute(
-            """
-            CREATE TABLE IF NOT EXISTS blacklist (user_id BIGINT)
-        """
-        )
-        await self.apg.execute(
-            """
-            CREATE TABLE IF NOT EXISTS 
-            guilds (
-                guild_id BIGINT, 
-                prime_status BIT DEFAULT CAST(0 AS BIT),
-                joined_at TIMESTAMP DEFAULT NOW()
-            )
-        """
-        )
+        await self.apg.execute(open("schema.sql", "r").read())
 
     async def connect_driver(self):
         self.driver = SentinelDriver()

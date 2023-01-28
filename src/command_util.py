@@ -2,6 +2,7 @@ from typing import Generic
 from .sentinel import Sentinel, SentinelContext, SentinelView, T
 import discord
 from typing import Sequence, TypeVar, ParamSpec
+from discord.ext import commands
 
 
 class Paginator(SentinelView, Generic[T]):
@@ -114,3 +115,26 @@ class Paginator(SentinelView, Generic[T]):
 
     async def embed(self, value_range: tuple[T]) -> discord.Embed:
         raise NotImplementedError
+
+
+class ParamDefaults:
+    member = commands.param(
+        converter=discord.Member,
+        default=lambda ctx: ctx.author,
+        displayed_default="<author>",
+    )
+    user = commands.param(
+        converter=discord.User,
+        default=lambda ctx: ctx.author,
+        displayed_default="<author>",
+    )
+    channel = commands.param(
+        converter=discord.TextChannel,
+        default=lambda ctx: ctx.channel,
+        displayed_default="<channel>",
+    )
+    guild = commands.param(
+        converter=discord.Guild,
+        default=lambda ctx: ctx.guild,
+        displayed_default="<guild>",
+    )
