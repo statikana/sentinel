@@ -15,7 +15,18 @@ from pathlib import Path
 import sys
 import threading
 import time
-from typing import Any, Callable, Coroutine, Generator, Generic, Optional, ParamSpec, Type, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Coroutine,
+    Generator,
+    Generic,
+    Optional,
+    ParamSpec,
+    Type,
+    TypeVar,
+    Union,
+)
 import discord
 from discord.ext import commands
 from datetime import datetime
@@ -111,22 +122,26 @@ class Sentinel(commands.Bot):
     async def on_message(self, message: discord.Message, /) -> None:
         if message.author.id in await self.apg.fetch("SELECT user_id FROM blacklist"):
             return
-        
+
         return await super().on_message(message)
 
     async def prepare_databases(self):
-        await self.apg.execute("""
+        await self.apg.execute(
+            """
             CREATE TABLE IF NOT EXISTS blacklist (user_id BIGINT)
-        """)
-        await self.apg.execute("""
+        """
+        )
+        await self.apg.execute(
+            """
             CREATE TABLE IF NOT EXISTS 
             guilds (
                 guild_id BIGINT, 
                 prime_status BIT DEFAULT CAST(0 AS BIT),
                 joined_at TIMESTAMP DEFAULT NOW()
             )
-        """)
-    
+        """
+        )
+
     async def connect_driver(self):
         self.driver = SentinelDriver()
 
@@ -230,19 +245,26 @@ class SentinelDriver:
         options = FirefoxOptions()
         options.headless = True
         options.binary_location = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
-        self.driver = SeleniumFirefox(options=options, executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe")
-    
+        self.driver = SeleniumFirefox(
+            options=options,
+            executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe",
+        )
+
     async def get(self, url: str, /, wait: float = 0.5) -> str:
         thread_get = asyncio.to_thread(self.driver.get, url)
         await thread_get
         thread_get.close()
         await asyncio.sleep(wait)
-        thread_return: Coroutine[Any, Any, str] = asyncio.to_thread(self.driver.execute_script, "return document.documentElement.outerHTML")
+        thread_return: Coroutine[Any, Any, str] = asyncio.to_thread(
+            self.driver.execute_script, "return document.documentElement.outerHTML"
+        )
         return await thread_return
 
 
 class SentinelView(discord.ui.View):
-    def __init__(self, ctx: SentinelContext, *, timeout: float = 600.0, row: int | None = None):
+    def __init__(
+        self, ctx: SentinelContext, *, timeout: float = 600.0, row: int | None = None
+    ):
         self.message: Optional[discord.Message] = None
         self.ctx = ctx
         super().__init__(timeout=timeout)
@@ -256,13 +278,12 @@ class SentinelView(discord.ui.View):
                     row=row,
                 )
             )
-    
+
     async def close_button(self, itx: discord.Interaction, button: discord.ui.Button):
         for child in self.children:
             if isinstance(child, (discord.ui.Button, discord.ui.Select)):
                 child.disabled = True
         await itx.response.edit_message(view=self)
-
 
     async def interaction_check(self, itx: discord.Interaction) -> bool:
         return all(
@@ -279,36 +300,40 @@ class SentinelPool(asyncpg.Pool):
     def __init__(self, bot: Sentinel, *connect_args, **kwargs):
         self.bot = bot
         super().__init__(*connect_args, **kwargs)
+
     async def fetch(self, query, *args, timeout=None, use_cache: bool = False):
         if use_cache:
             if (cached := self.bot.guild_cache[query]) is not None:
                 return cached
-            
 
 
 class SentinelCache(dict[Any, "SentinelCacheEntry"], Generic[_KT, _VT]):
     def __init__(self, *, timeout: int):
         super().__init__()
         self.timeout = timeout
+
     def __setitem__(self, __key: _KT, __value: _VT) -> None:
         return super().__setitem__(__key, SentinelCacheEntry(__value, self.timeout))
-    
+
     def __getitem__(self, __key: _KT) -> Optional[_VT]:
         cache_entry: Optional[SentinelCacheEntry] = super().get(__key, None)
         if cache_entry is None:
             return None
-        
+
         if cache_entry.time + self.timeout <= time.time():
             super().__delitem__(__key)
             return None
-    
+
         return cache_entry.value
 
 
 class SentinelCacheEntry:
     def __init__(self, value: Any, timeout: int):
         self.value = value
-        self.time = int(time.time()) # Ints are much faster to work with and no need for decimals
+        self.time = int(
+            time.time()
+        )  # Ints are much faster to work with and no need for decimals
+
 
 SentinelCogT = TypeVar("SentinelCogT", bound=SentinelCog, covariant=True)
 
