@@ -8,8 +8,14 @@ File which includes the major types used in Sentinel:
 """
 
 
+import asyncio
+from functools import partial
 import logging
-from typing import Generator, Optional, ParamSpec, Type, TypeVar, Union
+from pathlib import Path
+import sys
+import threading
+import time
+from typing import Any, Callable, Coroutine, Generator, Generic, Optional, ParamSpec, Type, TypeVar, Union
 import discord
 from discord.ext import commands
 from datetime import datetime
@@ -20,6 +26,11 @@ import env
 from glob import glob
 import importlib
 import aiohttp
+from selenium.webdriver import Firefox as SeleniumFirefox
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+
+_KT = TypeVar("_KT")
+_VT = TypeVar("_VT")
 
 __version__ = ("1", "0", "0")
 
@@ -32,6 +43,8 @@ class Sentinel(commands.Bot):
     def __init__(self):
         self.session: SentinelAIOSession
         self.apg: asyncpg.Pool
+        self.guild_cache = SentinelCache(timeout=300)
+        self.driver: SentinelDriver
         super().__init__(
             command_prefix=">>",
             help_command=None,
@@ -53,6 +66,7 @@ class Sentinel(commands.Bot):
         await self.connect_db()
         await self.connect_session()
         await self.prepare_databases()
+        await self.connect_driver()
 
     async def reload_extensions(
         self, ext_dir: str = ".\\src\\ext"
@@ -85,7 +99,7 @@ class Sentinel(commands.Bot):
 
     async def connect_db(self):
         pool = await asyncpg.create_pool(
-            f"postgres://{env.PG_USER}:{env.PG_PASS}@{env.PG_HOST}:{env.PG_PORT}"
+            f"postgres://{env.POSTGRES_USER}:{env.POSTGRES_PASSWORD}@{env.POSTGRES_HOST}:{env.POSTGRES_PORT}"
         )
         if pool is None:
             raise RuntimeError("Failed to connect to database")
@@ -97,10 +111,24 @@ class Sentinel(commands.Bot):
     async def on_message(self, message: discord.Message, /) -> None:
         if message.author.id in await self.apg.fetch("SELECT user_id FROM blacklist"):
             return
+        
         return await super().on_message(message)
 
     async def prepare_databases(self):
-        await self.apg.execute("CREATE TABLE IF NOT EXISTS blacklist (user_id BIGINT)")
+        await self.apg.execute("""
+            CREATE TABLE IF NOT EXISTS blacklist (user_id BIGINT)
+        """)
+        await self.apg.execute("""
+            CREATE TABLE IF NOT EXISTS 
+            guilds (
+                guild_id BIGINT, 
+                prime_status BIT DEFAULT CAST(0 AS BIT),
+                joined_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    
+    async def connect_driver(self):
+        self.driver = SentinelDriver()
 
     @property
     def commands(self) -> set["AnyTypedCommand"]:
@@ -197,11 +225,44 @@ class SentinelAIOSession(aiohttp.ClientSession):
         )
 
 
+class SentinelDriver:
+    def __init__(self):
+        options = FirefoxOptions()
+        options.headless = True
+        options.binary_location = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+        self.driver = SeleniumFirefox(options=options, executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe")
+    
+    async def get(self, url: str, /, wait: float = 0.5) -> str:
+        thread_get = asyncio.to_thread(self.driver.get, url)
+        await thread_get
+        thread_get.close()
+        await asyncio.sleep(wait)
+        thread_return: Coroutine[Any, Any, str] = asyncio.to_thread(self.driver.execute_script, "return document.documentElement.outerHTML")
+        return await thread_return
+
+
 class SentinelView(discord.ui.View):
-    def __init__(self, ctx: SentinelContext, *, timeout: float = 600.0):
+    def __init__(self, ctx: SentinelContext, *, timeout: float = 600.0, row: int | None = None):
         self.message: Optional[discord.Message] = None
         self.ctx = ctx
         super().__init__(timeout=timeout)
+
+        if row is not None:
+            self.add_item(
+                discord.ui.Button(
+                    style=discord.ButtonStyle.danger,
+                    label="Close",
+                    custom_id="close",
+                    row=row,
+                )
+            )
+    
+    async def close_button(self, itx: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            if isinstance(child, (discord.ui.Button, discord.ui.Select)):
+                child.disabled = True
+        await itx.response.edit_message(view=self)
+
 
     async def interaction_check(self, itx: discord.Interaction) -> bool:
         return all(
@@ -213,6 +274,41 @@ class SentinelView(discord.ui.View):
             }
         )
 
+
+class SentinelPool(asyncpg.Pool):
+    def __init__(self, bot: Sentinel, *connect_args, **kwargs):
+        self.bot = bot
+        super().__init__(*connect_args, **kwargs)
+    async def fetch(self, query, *args, timeout=None, use_cache: bool = False):
+        if use_cache:
+            if (cached := self.bot.guild_cache[query]) is not None:
+                return cached
+            
+
+
+class SentinelCache(dict[Any, "SentinelCacheEntry"], Generic[_KT, _VT]):
+    def __init__(self, *, timeout: int):
+        super().__init__()
+        self.timeout = timeout
+    def __setitem__(self, __key: _KT, __value: _VT) -> None:
+        return super().__setitem__(__key, SentinelCacheEntry(__value, self.timeout))
+    
+    def __getitem__(self, __key: _KT) -> Optional[_VT]:
+        cache_entry: Optional[SentinelCacheEntry] = super().get(__key, None)
+        if cache_entry is None:
+            return None
+        
+        if cache_entry.time + self.timeout <= time.time():
+            super().__delitem__(__key)
+            return None
+    
+        return cache_entry.value
+
+
+class SentinelCacheEntry:
+    def __init__(self, value: Any, timeout: int):
+        self.value = value
+        self.time = int(time.time()) # Ints are much faster to work with and no need for decimals
 
 SentinelCogT = TypeVar("SentinelCogT", bound=SentinelCog, covariant=True)
 

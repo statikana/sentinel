@@ -77,6 +77,8 @@ class Paginator(SentinelView, Generic[T]):
         itx: discord.Interaction | None = None,
         pressed: discord.ui.Button | None = None,
     ) -> None:
+        if itx is not None:
+            await itx.response.defer()
         self.current_page = min(self.max_page, max(self.min_page, self.current_page))
 
         self.display_values_index_start = self.current_page * self.page_size
