@@ -257,9 +257,16 @@ class SentinelView(discord.ui.View):
         *,
         timeout: float | None = 600.0,
         row: int | None = None,
+        any_responder: bool = False,
+        any_channel: bool = False,
+        any_guild: bool = False,
     ):
         self.message: Optional[discord.Message] = None
         self.ctx = ctx
+        self.any_responder = any_responder
+        self.any_channel = any_channel
+        self.any_guild = any_guild
+
         super().__init__(timeout=timeout)
 
         if row is not None:
@@ -281,9 +288,9 @@ class SentinelView(discord.ui.View):
     async def interaction_check(self, itx: discord.Interaction) -> bool:
         return all(
             {
-                self.ctx.author == itx.user,
-                self.ctx.channel == itx.channel,
-                self.ctx.guild == itx.guild,
+                self.ctx.author == itx.user or self.any_responder,
+                self.ctx.channel == itx.channel or self.any_channel,
+                self.ctx.guild == itx.guild or self.any_guild,
                 not itx.user.bot,
             }
         )

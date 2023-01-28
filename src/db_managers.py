@@ -100,7 +100,6 @@ class CoinsManager:
     ) -> tuple[bool, int | None, int | None]:
         giver_bal = await self.get_balance(giver_id, create_if_unfound)
         rec_bal = await self.get_balance(receiver_id, create_if_unfound)
-
         # Either the giver doesn't have an account and we're not creating one, or they don't have enough money anyway
         # The balances will only be `None` if `create_if_unfound` is `False`
         if (
@@ -112,12 +111,12 @@ class CoinsManager:
 
         if create_if_unfound:
             await self.pool.execute(
-                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance + $2 RETURNING *",
+                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance - $2",
                 giver_id,
-                -amount,
+                amount,
             )
             await self.pool.execute(
-                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance + $2 RETURNING *",
+                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance + $2",
                 receiver_id,
                 amount,
             )

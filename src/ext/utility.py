@@ -94,6 +94,8 @@ class Utility(SentinelCog):
         version: Optional[str] = "stable",
         lang="en",
     ):
+        """Read the F*%#ing Manual! Searches the documentation for a project on ReadTheDocs"""
+        # TODO: Cacheing?
         if ctx.interaction:
             await ctx.interaction.response.defer()
         project = project.lower().replace(" ", "").replace(".", "")

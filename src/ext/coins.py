@@ -37,7 +37,7 @@ class Coins(SentinelCog):
             return
         balance = await self.dkm.get_balance(member.id)
         embed = ctx.embed(
-            title=f"`{member}`'s Balance", description=f"\N{Coin}{balance}"
+            title=f"`{member}`'s Balance", description=f"\N{Coin}{balance:,}"
         )
         await ctx.send(embed=embed)
 
@@ -67,9 +67,9 @@ class Coins(SentinelCog):
             )
             await ctx.send(embed=embed)
             return
-        description = f"`{ctx.author}` is giving `{member}` \N{Coin}`{amount}`\n"
-        description += f"`{ctx.author}`'s Balance: \N{Coin}`{giver_bal}`\nNew Balance: \N{Coin}`{giver_bal - amount}`\n"
-        description += f"`{member}`'s Balance: \N{Coin}`{rec_bal}`\nNew Balance: \N{Coin}`{rec_bal + amount}`"
+        description = f"`{ctx.author}` is giving `{member}` \N{Coin}`{amount:,}`\n"
+        description += f"`{ctx.author}`'s Balance: \N{Coin}`{giver_bal:,}`\nNew Balance: \N{Coin}`{giver_bal - amount:,}`\n"
+        description += f"`{member}`'s Balance: \N{Coin}`{rec_bal:,}`\nNew Balance: \N{Coin}`{rec_bal + amount:,}`"
 
         embed = ctx.embed(
             title="Confirm Transaction",
@@ -87,28 +87,22 @@ class Coins(SentinelCog):
     async def request(self, ctx: SentinelContext, member: discord.Member, amount: int):
         """Request coins from another member"""
         if amount < 1:
-            embed = ctx.embed(title="Invalid Amount", color=discord.Color.red())
-            await ctx.send(embed=embed)
-            return
+            raise commands.BadArgument("Invalid amount")
         if member.bot:
-            embed = ctx.embed(
-                title="Cannot Request From Bots", color=discord.Color.red()
-            )
-            await ctx.send(embed=embed)
-            return
+            raise commands.BadArgument("Cannot request from bots")
         giver_bal = await self.dkm.get_balance(member.id)
         rec_bal = await self.dkm.get_balance(ctx.author.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
-                description=f"`{member}` does not have enough \N{Coin} to complete this transaction.\n\n`{member}`'s Balance: \N{Coin}`{giver_bal}`",
+                description=f"`{member}` does not have enough \N{Coin} to complete this transaction.\n\n`{member}`'s Balance: \N{Coin}`{giver_bal:,}`",
                 color=discord.Color.red(),
             )
             await ctx.send(embed=embed)
             return
-        description = f"`{member}` is giving `{ctx.author}` \N{Coin}`{amount}`\n"
-        description += f"`{member}`'s Balance: \N{Coin}`{giver_bal}`\nNew Balance: \N{Coin}`{giver_bal - amount}`\n"
-        description += f"`{ctx.author}`'s Balance: \N{Coin}`{rec_bal}`\nNew Balance: \N{Coin}`{rec_bal + amount}`"
+        description = f"`{member}` is giving `{ctx.author}` **\N{Coin}`{amount:,}`**\n"
+        description += f"`{member}` [Current]: \N{Coin}`{giver_bal:,}`\n`{member}` [New]: \N{Coin}`{giver_bal - amount:,}`\n"
+        description += f"`{ctx.author}` [Current]: \N{Coin}`{rec_bal:,}`\n`{ctx.author}` [New]: \N{Coin}`{rec_bal + amount:,}`"
 
         embed = ctx.embed(
             title="Confirm Transaction",
@@ -119,22 +113,22 @@ class Coins(SentinelCog):
             return
 
         view = GiveCoinsConfirmation(ctx, self.dkm, member, ctx.author, amount)
-        view.message = await ctx.send(content=member.mention, embed=embed, view=view)
+        await ctx.send(content=member.mention, embed=embed, view=view)
 
-    @coin.command()
+    @commands.command()
     @commands.is_owner()
-    async def set_balance(
+    async def set_coin_balance(
         self, ctx: SentinelContext, member: discord.Member, amount: int
     ):
         await self.dkm.set_balance(member.id, amount)
-        await ctx.send(f"Set `{member}`'s balance to \N{Coin}`{amount}`")
+        await ctx.send(f"Set `{member}`'s balance to \N{Coin}`{amount:,}`")
 
 
 class GiveCoinsConfirmation(SentinelView):
-    async def __init__(
+    def __init__(
         self,
         ctx: SentinelContext,
-        dkm: CoinsManager,
+        cnm: CoinsManager,
         giver: discord.Member,
         receiver: discord.Member,
         amount: Range[int, 1],
@@ -142,9 +136,8 @@ class GiveCoinsConfirmation(SentinelView):
         self.giver = giver
         self.receiver = receiver
         self.amount = amount
-        self.dkm = dkm
-        self.message: discord.Message | None = None
-        super().__init__(ctx, timeout=30)
+        self.cnm = cnm
+        super().__init__(ctx, timeout=60 * 30, any_responder=True) # Responses are handled by the buttons # 1/2 hour timeout
 
     @discord.ui.button(
         label="Accept",
@@ -152,35 +145,47 @@ class GiveCoinsConfirmation(SentinelView):
         emoji="\N{White Heavy Check Mark}",
     )
     async def accept(self, itx: discord.Interaction, button: discord.ui.Button):
-        if self.message is None:
+        if itx.user.id != self.giver.id:
+            embed = self.ctx.embed(
+                title="Invalid User",
+                description="You are not the giver in this transaction.",
+                color=discord.Color.red(),
+            )
+            await itx.response.send_message(embed=embed, ephemeral=True)
             return
-        successful, giver_bal, rec_bal = await self.dkm.give_balance(
+        successful, giver_bal, rec_bal = await self.cnm.give_balance(
             self.giver.id, self.receiver.id, self.amount, True
         )
         if successful:
             embed = self.ctx.embed(
                 title="Transaction Successful",
-                description=f"`{self.giver}` gave `{self.receiver}` \N{Coin}`{self.amount}`\n\n`{self.giver}`'s Balance: \N{Coin}`{giver_bal}`\n`{self.receiver}`'s Balance: \N{Coin}`{rec_bal}`",
+                description=f"`{self.giver}` gave `{self.receiver}` \N{Coin}`{self.amount:,}`\n`{self.giver}`'s Balance: \N{Coin}`{giver_bal:,}`\n`{self.receiver}`'s Balance: \N{Coin}`{rec_bal:,}`",
             )
-            await self.message.edit(embed=embed, view=None)
+            await itx.response.send_message(embed=embed)
         else:
             embed = self.ctx.embed(
                 title="Transaction Failed",
                 description="Something went wrong, please try again later.\nYour balance has not been affected.",
             )
-            await self.message.edit(embed=embed, view=None)
+            await itx.response.send_message(embed=embed)
 
     @discord.ui.button(
         label="Decline", style=discord.ButtonStyle.red, emoji="\N{Cross Mark}"
     )
     async def decline(self, itx: discord.Interaction, button: discord.ui.Button):
-        if self.message is None:
+        if not (itx.user.id == self.giver.id or itx.user.id == self.receiver.id):
+            embed = self.ctx.embed(
+                title="Invalid User",
+                description="You are not involved in this transaction.",
+                color=discord.Color.red(),
+            )
+            await itx.response.send_message(embed=embed, ephemeral=True)
             return
         embed = self.ctx.embed(
-            title="Transaction Declined",
+            title=f"Transaction Declined by `{itx.user}`",
             description="The transaction has been cancelled.\nYour balance has not been affected.",
         )
-        await self.message.edit(embed=embed, view=None)
+        await itx.response.send_message(embed=embed)
 
 
 async def setup(bot: Sentinel):
