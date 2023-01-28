@@ -40,6 +40,8 @@ import aiohttp
 from selenium.webdriver import Firefox as SeleniumFirefox
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
+from . import error_types as SentinelErrors
+
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
 
@@ -152,8 +154,9 @@ _SentinelBotT = TypeVar("_SentinelBotT", bound=Sentinel, covariant=True)
 
 
 class SentinelContext(commands.Context):
-    def __init__(self, *args, bot: Sentinel, **kwargs):
-        super().__init__(*args, bot=bot, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bot: Sentinel = self.bot
 
     def embed(
         self,
@@ -249,7 +252,11 @@ class SentinelDriver:
 
 class SentinelView(discord.ui.View):
     def __init__(
-        self, ctx: SentinelContext, *, timeout: float = 600.0, row: int | None = None
+        self,
+        ctx: SentinelContext,
+        *,
+        timeout: float | None = 600.0,
+        row: int | None = None,
     ):
         self.message: Optional[discord.Message] = None
         self.ctx = ctx

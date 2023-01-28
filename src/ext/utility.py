@@ -145,9 +145,7 @@ class Utility(SentinelCog):
         member="The member you want to get the roles of. Defaults to the author of the command"
     )
     async def roles(
-        self,
-        ctx: SentinelContext,
-        member: discord.Member = ParamDefaults.member
+        self, ctx: SentinelContext, member: discord.Member = ParamDefaults.member
     ):
         description = f"**Highest Role:** {member.top_role.mention}\n"
         description += f"-- **All Roles** [*Descending*] --\n" + "\n".join(

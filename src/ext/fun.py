@@ -31,7 +31,9 @@ class Fun(SentinelCog):
     ):
         """Try to guess a number between a given range!"""
         attempts = 0
-        gamble_amount *= round((upper - lower) / maximum_attempts) # simple formula to make the game more risky the higher the range is and the less attempts you have
+        gamble_amount *= round(
+            (upper - lower) / maximum_attempts
+        )  # simple formula to make the game more risky the higher the range is and the less attempts you have
 
         number = random.randint(lower, upper)
 
@@ -137,6 +139,7 @@ class Fun(SentinelCog):
                 formatted_guesses += "\N{White Heavy Check Mark}"
             formatted_guesses += "\n"
         return formatted_guesses
+
 
 async def setup(bot: Sentinel):
     await bot.add_cog(Fun(bot))
