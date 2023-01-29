@@ -10,7 +10,7 @@ from ..sentinel import (
     SentinelPool,
 )
 from ..command_util import ParamDefaults
-from ..db_managers import CoinsManager
+from ..db_managers import UserManager
 
 
 class Coins(SentinelCog):
@@ -18,7 +18,7 @@ class Coins(SentinelCog):
     Sentinel's very own global currency system! You can earn by levelling up, logging in daily, gambling, and many more ways!"""
 
     def __init__(self, bot: Sentinel):
-        self.dkm = CoinsManager(bot.apg)
+        self.usm = UserManager(bot.apg)
         super().__init__(bot, emoji="\N{Banknote with Dollar Sign}")
 
     @commands.hybrid_group()
@@ -35,7 +35,7 @@ class Coins(SentinelCog):
             embed = ctx.embed(title="Bots don't have coins!", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
-        balance = await self.dkm.get_balance(member.id)
+        balance = await self.usm.get_balance(member.id)
         embed = ctx.embed(
             title=f"`{member}`'s Balance", description=f"\N{Coin}{balance:,}"
         )
@@ -57,8 +57,8 @@ class Coins(SentinelCog):
             embed = ctx.embed(title="Cannot Give To Bots", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
-        giver_bal = await self.dkm.get_balance(ctx.author.id)
-        rec_bal = await self.dkm.get_balance(member.id)
+        giver_bal = await self.usm.get_balance(ctx.author.id)
+        rec_bal = await self.usm.get_balance(member.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
@@ -79,7 +79,7 @@ class Coins(SentinelCog):
         if isinstance(ctx.author, discord.User):
             return  # wha
 
-        view = GiveCoinsConfirmation(ctx, self.dkm, ctx.author, member, amount)
+        view = GiveCoinsConfirmation(ctx, self.usm, ctx.author, member, amount)
         view.message = await ctx.send(embed=embed, view=view)
 
     @coin.command()
@@ -90,8 +90,8 @@ class Coins(SentinelCog):
             raise commands.BadArgument("Invalid amount")
         if member.bot:
             raise commands.BadArgument("Cannot request from bots")
-        giver_bal = await self.dkm.get_balance(member.id)
-        rec_bal = await self.dkm.get_balance(ctx.author.id)
+        giver_bal = await self.usm.get_balance(member.id)
+        rec_bal = await self.usm.get_balance(ctx.author.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
@@ -112,7 +112,7 @@ class Coins(SentinelCog):
         if isinstance(ctx.author, discord.User):
             return
 
-        view = GiveCoinsConfirmation(ctx, self.dkm, member, ctx.author, amount)
+        view = GiveCoinsConfirmation(ctx, self.usm, member, ctx.author, amount)
         await ctx.send(content=member.mention, embed=embed, view=view)
 
     @commands.command()
@@ -120,7 +120,7 @@ class Coins(SentinelCog):
     async def set_coin_balance(
         self, ctx: SentinelContext, member: discord.Member, amount: int
     ):
-        await self.dkm.set_balance(member.id, amount)
+        await self.usm.set_balance(member.id, amount)
         await ctx.send(f"Set `{member}`'s balance to \N{Coin}`{amount:,}`")
 
 
@@ -128,7 +128,7 @@ class GiveCoinsConfirmation(SentinelView):
     def __init__(
         self,
         ctx: SentinelContext,
-        cnm: CoinsManager,
+        usm: UserManager,
         giver: discord.Member,
         receiver: discord.Member,
         amount: Range[int, 1],
@@ -136,8 +136,10 @@ class GiveCoinsConfirmation(SentinelView):
         self.giver = giver
         self.receiver = receiver
         self.amount = amount
-        self.cnm = cnm
-        super().__init__(ctx, timeout=60 * 30, any_responder=True) # Responses are handled by the buttons # 1/2 hour timeout
+        self.usm = usm
+        super().__init__(
+            ctx, timeout=60 * 30, any_responder=True
+        )  # Responses are handled by the buttons # 1/2 hour timeout
 
     @discord.ui.button(
         label="Accept",
@@ -153,7 +155,7 @@ class GiveCoinsConfirmation(SentinelView):
             )
             await itx.response.send_message(embed=embed, ephemeral=True)
             return
-        successful, giver_bal, rec_bal = await self.cnm.give_balance(
+        successful, giver_bal, rec_bal = await self.usm.give_balance(
             self.giver.id, self.receiver.id, self.amount, True
         )
         if successful:

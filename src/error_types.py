@@ -35,25 +35,19 @@ class InvalidChannel(SentinelError):
     pass
 
 
-class BadArgument(SentinelError):
-    """Raised when a user gives a bad argument to a command"""
+class TagNameExists(SentinelError):
+    """Raised when a user tries to create a tag with a name that already exists"""
 
     pass
 
 
-class MissingRequiredArgument(SentinelError):
-    """Raised when a user does not provide a required argument to a command"""
+class BadTagName(SentinelError):
+    """Raised when a user tries to create a tag with a name that is too long"""
 
     pass
 
 
-class MissingPermissions(SentinelError):
-    """Raised when a user does not have the required permissions to run a command"""
-
-    pass
-
-
-class BotMissingPermissions(SentinelError):
-    """Raised when the bot does not have the required permissions to run a command"""
+class BadTagContent(SentinelError):
+    """Raised when a user tries to create a tag with content that is too long"""
 
     pass

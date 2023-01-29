@@ -1,8 +1,10 @@
-from typing import Generic
+from typing import Annotated, Generic
 from .sentinel import Sentinel, SentinelContext, SentinelView, T
 import discord
 from typing import Sequence, TypeVar, ParamSpec
 from discord.ext import commands
+
+import re
 
 
 class Paginator(SentinelView, Generic[T]):
@@ -12,18 +14,20 @@ class Paginator(SentinelView, Generic[T]):
         values: tuple[T],
         page_size: int,
         *,
-        timeout: float = 600.0
+        timeout: float = 600.0,
     ):
-        self.ctx = ctx
+
+        super().__init__(ctx, timeout=timeout)
         self.values = values
         self.page_size = page_size
 
         self.current_page = 0
         self.min_page = 0
-        self.max_page = (
+        self.max_page = max(
             (len(self.values) // self.page_size)
             if (len(self.values) % self.page_size == 0)
-            else (len(self.values) // self.page_size + 1)
+            else (len(self.values) // self.page_size + 1),
+            0,
         )
         self.max_page -= 1
 
@@ -32,8 +36,6 @@ class Paginator(SentinelView, Generic[T]):
         self.displayed_values = self.values[
             self.display_values_index_start : self.display_values_index_end
         ]
-
-        super().__init__(ctx, timeout=timeout)
 
     @discord.ui.button(
         emoji="\N{Black Left-Pointing Double Triangle with Vertical Bar}",
@@ -53,6 +55,12 @@ class Paginator(SentinelView, Generic[T]):
     ) -> None:
         self.current_page -= 1
         await self.update(itx, button)
+
+    @discord.ui.button(  # cross
+        emoji="\N{Cross Mark}", style=discord.ButtonStyle.danger
+    )
+    async def close(self, itx: discord.Interaction, button: discord.ui.Button) -> None:
+        await super().prefab_close_button(itx, button)
 
     @discord.ui.button(
         emoji="\N{Black Rightwards Arrow}", style=discord.ButtonStyle.grey
@@ -105,7 +113,11 @@ class Paginator(SentinelView, Generic[T]):
 
         if pressed is not None:
             for button in self.children:
-                if isinstance(button, discord.ui.Button) and button is not pressed:
+                if (
+                    isinstance(button, discord.ui.Button)
+                    and button is not pressed
+                    and button.style != discord.ButtonStyle.danger
+                ):
                     button.style = discord.ButtonStyle.grey
             pressed.style = discord.ButtonStyle.green
 
@@ -138,3 +150,46 @@ class ParamDefaults:
         default=lambda ctx: ctx.guild,
         displayed_default="<guild>",
     )
+
+
+class StringArgParse(commands.Converter):
+    def __init__(
+        self,
+        lower: bool = False,
+        upper: bool = False,
+        stripped: list[str] | None = None,
+        regex: str | None = None,
+    ):
+        self._lower = lower
+        self._upper = upper
+        self._stripped = stripped
+        self.regex = regex
+
+    async def convert(self, ctx: commands.Context, arg: str) -> str:
+        if self._lower:
+            arg = arg.lower()
+        if self.upper:
+            arg = arg.upper()
+        if self._stripped is not None:
+            for chars in self._stripped:
+                arg = arg.strip(chars)
+        if self.regex is not None:
+            if not re.match(self.regex, arg):
+                raise commands.BadArgument(f"Invalid argument: {arg}")
+        return arg
+
+    @property
+    def lower(self) -> "StringArgParse":
+        return StringArgParse(
+            lower=True, upper=self._upper, stripped=self._stripped, regex=self.regex
+        )
+
+    @property
+    def upper(self) -> "StringArgParse":
+        return StringArgParse(
+            lower=self._lower, upper=True, stripped=self._stripped, regex=self.regex
+        )
+
+
+StringParam = Annotated[str, StringArgParse]
+LowerString = commands.param(converter=StringParam.lower)

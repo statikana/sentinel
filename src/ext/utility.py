@@ -120,23 +120,16 @@ class Utility(SentinelCog):
                 name = name.text
                 source = source.text.strip().strip("()")
                 formatted_results.append(
-                    RTFMMeta(name, ref_url + "/" + str(href["href"]), source)
+                    RTFMMeta(
+                        name=name,
+                        href=ref_url + "/" + str(href["href"]),
+                        source_description=source,
+                    )
                 )
 
-        class RTFMPaginator(Paginator):
-            async def embed(self, value_range: tuple[RTFMMeta]) -> discord.Embed:
-                description = "\n".join(
-                    f"`{i + self.display_values_index_start + 1}:` **[{result.name}]({result.href})** *{result.source_description}*"
-                    for i, result in enumerate(value_range)
-                )
-                embed = self.ctx.embed(
-                    title=f'`{project} - "{query}":` Page `{self.current_page + 1}/{self.max_page + 1}`',
-                    description=description,
-                )
-                embed.url = search_url
-                return embed
-
-        view = RTFMPaginator(ctx, tuple(formatted_results), 10)
+        view = RTFMPaginator(
+            ctx, tuple(formatted_results), 10, project, query, search_url
+        )
         embed = await view.embed(view.displayed_values)
         message = await ctx.send(embed=embed, view=view)
         view.message = message
@@ -194,6 +187,34 @@ class AvatarGlobalView(SentinelView):
         await itx.response.edit_message(
             embed=embed, view=AvatarGuildView(self.ctx, self.member)
         )
+
+
+class RTFMPaginator(Paginator):
+    def __init__(
+        self,
+        ctx: SentinelContext,
+        values: tuple,
+        page_size: int,
+        project: str,
+        query: str,
+        search_url: str,
+    ):
+        super().__init__(ctx, values, page_size)
+        self.project = project
+        self.query = query
+        self.search_url = search_url
+
+    async def embed(self, value_range: tuple[RTFMMeta]) -> discord.Embed:
+        description = "\n".join(
+            f"`{i + self.display_values_index_start + 1}:` **[{result.name}]({result.href})** *{result.source_description}*"
+            for i, result in enumerate(value_range)
+        )
+        embed = self.ctx.embed(
+            title=f'`{self.project} - "{self.query}":` Page `{self.current_page + 1}/{self.max_page + 1}`',
+            description=description,
+        )
+        embed.url = self.search_url
+        return embed
 
 
 async def setup(bot: Sentinel):

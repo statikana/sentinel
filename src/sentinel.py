@@ -9,15 +9,10 @@ File which includes the major types used in Sentinel:
 
 
 import asyncio
-from functools import partial
 import logging
-from pathlib import Path
-import sys
-import threading
 import time
 from typing import (
     Any,
-    Callable,
     Coroutine,
     Generator,
     Generic,
@@ -256,7 +251,7 @@ class SentinelView(discord.ui.View):
         ctx: SentinelContext,
         *,
         timeout: float | None = 600.0,
-        row: int | None = None,
+        disable_on_timeout: bool = True,
         any_responder: bool = False,
         any_channel: bool = False,
         any_guild: bool = False,
@@ -269,17 +264,12 @@ class SentinelView(discord.ui.View):
 
         super().__init__(timeout=timeout)
 
-        if row is not None:
-            self.add_item(
-                discord.ui.Button(
-                    style=discord.ButtonStyle.danger,
-                    label="Close",
-                    custom_id="close",
-                    row=row,
-                )
-            )
+        if disable_on_timeout:
+            self.on_timeout = self._disable_on_timeout
 
-    async def close_button(self, itx: discord.Interaction, button: discord.ui.Button):
+    async def prefab_close_button(
+        self, itx: discord.Interaction, button: discord.ui.Button
+    ):
         for child in self.children:
             if isinstance(child, (discord.ui.Button, discord.ui.Select)):
                 child.disabled = True
@@ -294,6 +284,13 @@ class SentinelView(discord.ui.View):
                 not itx.user.bot,
             }
         )
+
+    async def _disable_on_timeout(self) -> None:
+        for child in self.children:
+            if isinstance(child, (discord.ui.Button, discord.ui.Select)):
+                child.disabled = True
+        if self.message is not None:
+            await self.message.edit(view=self)
 
 
 class SentinelPool(asyncpg.Pool):
