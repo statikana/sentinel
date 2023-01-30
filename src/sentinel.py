@@ -140,26 +140,26 @@ class Sentinel(commands.Bot):
 
     @property
     def commands(self) -> set["TypedHybrid"]:
-        return super().commands # type: ignore
-    
+        return super().commands  # type: ignore
+
     @property
     def cogs(self) -> Mapping[str, "SentinelCog"]:
-        return super().cogs # type: ignore
-    
+        return super().cogs  # type: ignore
+
     def get_cog(self, name: str, /) -> Optional["SentinelCog"]:
-        return super().get_cog(name) # type: ignore
+        return super().get_cog(name)  # type: ignore
 
     def get_command(self, name: str, /) -> Optional["TypedHybrid"]:
-        return super().get_command(name) # type: ignore
+        return super().get_command(name)  # type: ignore
 
     def walk_commands(self) -> Generator["TypedHybrid", None, None]:
-        return super().walk_commands() # type: ignore
+        return super().walk_commands()  # type: ignore
 
     def add_command(self, command: "TypedHybrid", /) -> None:
         super().add_command(command)
 
     def remove_command(self, name: str, /) -> Optional["TypedHybrid"]:
-        return super().remove_command(name) # type: ignore
+        return super().remove_command(name)  # type: ignore
 
 
 _SentinelBotT = TypeVar("_SentinelBotT", bound=Sentinel, covariant=True)
@@ -204,11 +204,8 @@ class SentinelTree(discord.app_commands.CommandTree):
         if itx.type == discord.InteractionType.application_command:
             # TODO: automatically defer?
             pass
-        return (
-            itx.user.id
-            not in await self.bot.apg.fetch(
-                "SELECT user_id FROM blacklist"
-            )
+        return itx.user.id not in await self.bot.apg.fetch(
+            "SELECT user_id FROM blacklist"
         )
 
 
@@ -276,8 +273,12 @@ class SentinelCog(commands.Cog):
         self.emoji = str(emoji or self.emoji)
         self.hidden = hidden or self.hidden
         super().__init__()
-    
-    def __init_subclass__(cls, emoji: Union[discord.Emoji, str]= "\N{Black Question Mark Ornament}", hidden: bool = False) -> None:
+
+    def __init_subclass__(
+        cls,
+        emoji: Union[discord.Emoji, str] = "\N{Black Question Mark Ornament}",
+        hidden: bool = False,
+    ) -> None:
         cls.emoji = str(emoji)
         cls.hidden = hidden
         super().__init_subclass__()
@@ -287,16 +288,16 @@ class SentinelCog(commands.Cog):
 
     async def cog_unload(self) -> None:
         logging.debug(f"Cog Unloaded: {self.__class__.__name__}")
-    
+
     def get_commands(self) -> list["TypedHybridCommand"]:
         new = []
         for command in super().get_commands():
             if not isinstance(command, commands.GroupMixin):
                 new.append(command)
         return new
-    
+
     def walk_commands(self) -> Generator["TypedHybridCommand", None, None]:
-        return super().walk_commands() # type: ignore
+        return super().walk_commands()  # type: ignore
 
 
 class SentinelAIOSession(aiohttp.ClientSession):
@@ -367,7 +368,8 @@ class SentinelCacheEntry:
         self.time = int(
             time.time()
         )  # Ints are much faster to work with and no need for decimals
-    
+
+
 async def _get_prefix(bot: Sentinel, message: discord.Message) -> str:
     if message.guild is None:
         return ">>"
@@ -375,18 +377,19 @@ async def _get_prefix(bot: Sentinel, message: discord.Message) -> str:
     return await bot.gdm.get_prefix(message.guild.id)
 
 
-
 SentinelCogT = TypeVar("SentinelCogT", bound=SentinelCog, covariant=True)
 
 
-class TypedHybridCommandType(commands.HybridCommand, Generic[SentinelCogT, P, T] ):
+class TypedHybridCommandType(commands.HybridCommand, Generic[SentinelCogT, P, T]):
     pass
+
 
 class TypedHybridGroupType(commands.HybridGroup, Generic[SentinelCogT, P, T]):
     @property
     def commands(self) -> list["TypedHybridCommand"]:
-        return super().commands # type: ignore
-    
+        return super().commands  # type: ignore
+
+
 TypedHybridCommand = TypedHybridCommandType[SentinelCog, P, T]
 TypedHybridGroup = TypedHybridGroupType[SentinelCog, P, T]
 TypedHybrid = Union[TypedHybridCommand, TypedHybridGroup]

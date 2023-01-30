@@ -20,6 +20,7 @@ from ..db_managers import TagsManager
 
 class Tags(SentinelCog, emoji="\N{Label}"):
     """Create guild-specific tags for use in the server"""
+
     @commands.hybrid_group()
     async def tags(self, ctx: SentinelContext):
         """Manage tags"""

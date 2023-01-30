@@ -304,6 +304,7 @@ class CogConverter(commands.Converter):
             if fuzz(arg, cog.qualified_name) > 0.95:
                 return cog
 
+
 def fuzz(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 

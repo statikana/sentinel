@@ -9,13 +9,14 @@ from ..sentinel import (
     SentinelView,
     TypedHybridCommand,
     TypedHybridGroup,
-    TypedHybrid
+    TypedHybrid,
 )
 from ..command_util import UniversalComponentConverter
 
 
 class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
     """Contains help commands"""
+
     @commands.hybrid_command()
     async def help(
         self,
@@ -121,7 +122,10 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
             view = SentinelView(ctx)
             view.add_item(self.select_command_item_from_cog(ctx, cog))
             view.add_item(self.select_cog_item(ctx))
-            print("THIENIENF", view.children[0].options, ) # type: ignore
+            print(
+                "THIENIENF",
+                view.children[0].options,
+            )  # type: ignore
             await itx.response.edit_message(embed=embed, view=view)
 
         sel.callback = callback
@@ -146,7 +150,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
                     label=command.qualified_name,
                     description=get_command_description(command),
                     default=False,
-                    emoji=command.cog.emoji if command.cog is not None else None
+                    emoji=command.cog.emoji if command.cog is not None else None,
                 )
             )
         sel = discord.ui.Select(
@@ -179,7 +183,9 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
         sel.callback = callback
         return sel
 
-    def select_command_item_from_cog(self, ctx: SentinelContext, cog: SentinelCog) -> discord.ui.Select:
+    def select_command_item_from_cog(
+        self, ctx: SentinelContext, cog: SentinelCog
+    ) -> discord.ui.Select:
         options: list[discord.SelectOption] = []
         for command in ctx.bot.walk_commands():
             if isinstance(command, commands.GroupMixin) or command.hidden:
@@ -199,6 +205,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
             min_values=1,
             max_values=1,
         )
+
         async def callback(interaction: discord.Interaction):
             itx = interaction
             command = ctx.bot.get_command(sel.values[0])
