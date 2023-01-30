@@ -2,8 +2,9 @@ import datetime
 import random
 import time
 from typing import overload
-from .sentinel import SentinelPool
 import asyncpg
+
+from config import DEFAULT_PREFIX
 
 from .command_types import TagEntry, MetaTagEntry, GuildEntry, UserEntry
 import discord
@@ -151,7 +152,6 @@ class TagsManager(SentinelDatabase):
         self.usm = UserManager(apg)
 
     async def get_tag_by_name(self, guild_id: int, tag_name: str) -> TagEntry | None:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
         meta_result = await self.apg.fetchrow(
             "SELECT * FROM tag_meta WHERE guild_id = $1 AND tag_name = $2",
             guild_id,
@@ -199,7 +199,6 @@ class TagsManager(SentinelDatabase):
         return self._form_tag(meta_result, full_result)
 
     async def get_tags_by_owner(self, owner_id: int) -> list[TagEntry]:
-        await self.usm.ensure_user(owner_id)
         tag_ids = await self.apg.fetch(
             "SELECT tag_id FROM tags WHERE owner_id = $1", owner_id
         )
@@ -209,7 +208,6 @@ class TagsManager(SentinelDatabase):
         return tags
 
     async def get_tags_in_guild(self, guild_id: int) -> list[TagEntry]:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
         tag_data = await self.apg.fetch(
             "SELECT tag_id, alias_to FROM tag_meta WHERE guild_id = $1", guild_id
         )
@@ -253,8 +251,6 @@ class TagsManager(SentinelDatabase):
         *,
         safe_insert: bool = True
     ) -> TagEntry | None:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
-        await self.usm.ensure_user(owner_id)
 
         tag_id = self._generate_tag_id(owner_id, guild_id)
         if safe_insert:
@@ -286,7 +282,6 @@ class TagsManager(SentinelDatabase):
         return self._form_tag(tag_meta, full_tag)
 
     async def get_tag_exists_by_name(self, guild_id: int, tag_name: str) -> bool:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
         return (
             await self.apg.fetchrow(
                 "SELECT * FROM tag_meta WHERE guild_id = $1 AND tag_name = $2",
@@ -311,8 +306,6 @@ class TagsManager(SentinelDatabase):
         check_tag_exists: bool = True,
         owner_id: int | None = None,
     ) -> bool:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
-        await self.usm.ensure_user(owner_id) if owner_id is not None else ...
         if check_tag_owner or check_tag_exists:
             tag = await self.get_tag_by_name(guild_id, tag_name)
             if check_tag_exists and (tag is None or tag.alias_to is not None):
@@ -341,8 +334,6 @@ class TagsManager(SentinelDatabase):
         check_tag_exists: bool = True,
         owner_id: int | None = None,
     ) -> bool:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
-        await self.usm.ensure_user(owner_id) if owner_id is not None else ...
         if check_tag_owner or check_tag_exists:
             tag = await self.get_tag_by_name(guild_id, tag_name)
             if check_tag_exists and (tag is None or tag.alias_to is not None):
@@ -367,8 +358,6 @@ class TagsManager(SentinelDatabase):
     async def create_alias(
         self, tag_name: str, owner_id: int, guild_id: int, alias_to: int
     ):
-        await self.gdm.join_guild(guild_id, safe_insert=True)
-        await self.usm.ensure_user(owner_id)
         # Tag aliases exist only within tag_meta
         tag_id = self._generate_tag_id(owner_id, guild_id)
         await self.apg.execute(
@@ -380,7 +369,6 @@ class TagsManager(SentinelDatabase):
         )
 
     async def delete_alias(self, tag_name: str, guild_id: int) -> bool:
-        await self.gdm.join_guild(guild_id, safe_insert=True)
         result = await self.apg.execute(
             "DELETE FROM tag_meta WHERE tag_name = $1 AND guild_id = $2 RETURING *",
             tag_name,
@@ -396,7 +384,6 @@ class TagsManager(SentinelDatabase):
         )
 
     async def transfer_tag_ownership(self, tag_id: int, new_owner_id: int) -> None:
-        await self.usm.ensure_user(new_owner_id)
         await self.apg.execute(
             "UPDATE tags SET owner_id = $1 WHERE tag_id = $2", new_owner_id, tag_id
         )
@@ -417,7 +404,7 @@ class TagsManager(SentinelDatabase):
 
 
 class GuildManager(SentinelDatabase):
-    async def join_guild(
+    async def ensure_guild(
         self, guild_id: int, prime_status: bool = False, *, safe_insert: bool = True
     ) -> GuildEntry:
         query = "INSERT INTO guilds(guild_id, prime_status) VALUES ($1, $2)"
@@ -480,6 +467,12 @@ class GuildManager(SentinelDatabase):
             joined_at,
         )
         return result is not None
+
+    async def get_prefix(self, guild_id: int) -> str:
+        result = await self.apg.fetchrow(
+            "SELECT prefix FROM guilds WHERE guild_id = $1", guild_id
+        )
+        return result["prefix"]
 
     def _form_guild(self, result) -> GuildEntry:
         return GuildEntry(

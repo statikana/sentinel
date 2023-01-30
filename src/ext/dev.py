@@ -3,13 +3,10 @@ from discord.ext import commands
 from typing import Optional, Sequence
 
 from ..sentinel import T, Sentinel, SentinelCog, SentinelContext
-from ..command_util import Paginator
+from ..command_util import Paginator, ParamDefaults
 
 
-class Dev(SentinelCog):
-    def __init__(self, bot: Sentinel):
-        super().__init__(bot, "\N{Personal Computer}", hidden=True)
-
+class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
     @commands.command()
     async def reload(self, ctx: SentinelContext):
         exts, utils = await self.bot.reload_extensions()
@@ -31,35 +28,39 @@ class Dev(SentinelCog):
         await ctx.send(embed=embed)
 
     @commands.group()
-    async def blacklist(self, ctx: SentinelContext):
+    async def blacklist(self, ctx: SentinelContext, user: discord.User | None):
         """Shows the blacklist"""
         if ctx.invoked_subcommand:
             return
+        if not user:
 
-        class BLDisplay(Paginator):
-            async def embed(self, displayed_values: tuple):
-                description = "\n".join(
-                    f"`{i + self.display_values_index_start + 1}:` <@{user_id}> | `{user_id}`"
-                    for i, user_id in enumerate(displayed_values)
-                )
-                return ctx.embed(
-                    title=f"`Blacklisted Users:` Page `{self.current_page + 1}/{self.max_page + 1}`",
-                    description=description,
-                )
+            class BLDisplay(Paginator):
+                async def embed(self, displayed_values: tuple):
+                    description = "\n".join(
+                        f"`{i + self.display_values_index_start + 1}:` <@{user_id}> | `{user_id}`"
+                        for i, user_id in enumerate(displayed_values)
+                    )
+                    return ctx.embed(
+                        title=f"`Blacklisted Users:` Page `{self.current_page + 1}/{self.max_page + 1}`",
+                        description=description,
+                    )
 
-        opts = tuple(
-            user["user_id"]
-            for user in await self.bot.apg.fetch("SELECT user_id FROM blacklist")
-        )
-        view = BLDisplay(ctx, opts, 10)
-        embed = await view.embed(view.displayed_values)
-        message = await ctx.send(embed=embed, view=view)
-        view.message = message
-        await view.update()
+            opts = tuple(
+                user["user_id"]
+                for user in await self.bot.apg.fetch("SELECT user_id FROM blacklist")
+            )
+            view = BLDisplay(ctx, opts, 10)
+            embed = await view.embed(view.displayed_values)
+            message = await ctx.send(embed=embed, view=view)
+            view.message = message
+            await view.update()
+        else:
+            return await self.add.callback(self, ctx, user)
 
     @blacklist.command()
     async def add(self, ctx: SentinelContext, user: discord.User):
         """Add a user to the blacklist"""
+        await self.bot.usm.ensure_user(user.id)
         await self.bot.apg.execute("INSERT INTO blacklist VALUES ($1)", user.id)
         embed = ctx.embed(
             title="Successful Blacklist \N{White Heavy Check Mark}",

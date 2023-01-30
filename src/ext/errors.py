@@ -6,9 +6,9 @@ from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelErrors
 from config import CATCH_COMMAND_ERRORS
 
 
-class Errors(SentinelCog):
+class Errors(SentinelCog, emoji="\N{No Entry Sign}", hidden=True):
     def __init__(self, bot: Sentinel):
-        super().__init__(bot, emoji="\N{No Entry Sign}", hidden=True)
+        super().__init__(bot)
         self.bot.tree.on_error = self.on_tree_error
 
     @commands.Cog.listener()

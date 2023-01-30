@@ -51,3 +51,30 @@ class BadTagContent(SentinelError):
     """Raised when a user tries to create a tag with content that is too long"""
 
     pass
+
+
+class MissingVaguePermissions(SentinelError):
+    """Raised when the user doesn't have permissions to do something. This is not a discord permission, but a permission that the bot has set up"""
+
+    pass
+
+
+class BadUserInput(SentinelError):
+    """Raised when a user inputs a user or member that is not valid"""
+
+    pass
+
+
+BadMemberInput = BadUserInput
+
+
+class TagNotFound(SentinelError):
+    """Raised when a user tries to get, edit, or delete a tag that doesn't exist"""
+
+    pass
+
+
+class ComponentNotFound(SentinelError):
+    """Raised when a user tries to fetch a component that doesn't exist"""
+
+    pass

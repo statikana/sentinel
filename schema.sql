@@ -7,7 +7,8 @@
 CREATE TABLE IF NOT EXISTS guilds (
     guild_id BIGINT NOT NULL PRIMARY KEY,
     prime_status BOOLEAN DEFAULT CAST(0 AS BOOLEAN),
-    joined_at TIMESTAMP DEFAULT NOW()
+    joined_at TIMESTAMP DEFAULT NOW(),
+    prefix VARCHAR(16) DEFAULT '>>'
 );
 
 CREATE TABLE IF NOT EXISTS users (

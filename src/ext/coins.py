@@ -13,35 +13,39 @@ from ..command_util import ParamDefaults
 from ..db_managers import UserManager
 
 
-class Coins(SentinelCog):
+class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
     """
     Sentinel's very own global currency system! You can earn by levelling up, logging in daily, gambling, and many more ways!"""
 
-    def __init__(self, bot: Sentinel):
-        self.usm = UserManager(bot.apg)
-        super().__init__(bot, emoji="\N{Banknote with Dollar Sign}")
-
     @commands.hybrid_group()
-    async def coin(self, ctx: SentinelContext):
+    async def coins(
+        self, ctx: SentinelContext, member: discord.Member = ParamDefaults.member
+    ):
         """Coin-related commands"""
-        pass
+        if ctx.invoked_subcommand:
+            return
 
-    @coin.command()
+        return await self.balance.callback(
+            self, ctx, member
+        )  # shortcut to balance command
+
+    @coins.command()
     @commands.guild_only()
     async def balance(
         self, ctx: SentinelContext, member: discord.Member = ParamDefaults.member
     ):
+        """Check your coins balance"""
         if member.bot:
             embed = ctx.embed(title="Bots don't have coins!", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
-        balance = await self.usm.get_balance(member.id)
+        balance = await self.bot.usm.get_balance(member.id)
         embed = ctx.embed(
             title=f"`{member}`'s Balance", description=f"\N{Coin}{balance:,}"
         )
         await ctx.send(embed=embed)
 
-    @coin.command()
+    @coins.command()
     @commands.guild_only()
     @describe(
         member="The member to give coins to",
@@ -57,8 +61,8 @@ class Coins(SentinelCog):
             embed = ctx.embed(title="Cannot Give To Bots", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
-        giver_bal = await self.usm.get_balance(ctx.author.id)
-        rec_bal = await self.usm.get_balance(member.id)
+        giver_bal = await self.bot.usm.get_balance(ctx.author.id)
+        rec_bal = await self.bot.usm.get_balance(member.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
@@ -79,10 +83,10 @@ class Coins(SentinelCog):
         if isinstance(ctx.author, discord.User):
             return  # wha
 
-        view = GiveCoinsConfirmation(ctx, self.usm, ctx.author, member, amount)
+        view = GiveCoinsConfirmation(ctx, self.bot.usm, ctx.author, member, amount)
         view.message = await ctx.send(embed=embed, view=view)
 
-    @coin.command()
+    @coins.command()
     @commands.guild_only()
     async def request(self, ctx: SentinelContext, member: discord.Member, amount: int):
         """Request coins from another member"""
@@ -90,8 +94,8 @@ class Coins(SentinelCog):
             raise commands.BadArgument("Invalid amount")
         if member.bot:
             raise commands.BadArgument("Cannot request from bots")
-        giver_bal = await self.usm.get_balance(member.id)
-        rec_bal = await self.usm.get_balance(ctx.author.id)
+        giver_bal = await self.bot.usm.get_balance(member.id)
+        rec_bal = await self.bot.usm.get_balance(ctx.author.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
@@ -112,7 +116,7 @@ class Coins(SentinelCog):
         if isinstance(ctx.author, discord.User):
             return
 
-        view = GiveCoinsConfirmation(ctx, self.usm, member, ctx.author, amount)
+        view = GiveCoinsConfirmation(ctx, self.bot.usm, member, ctx.author, amount)
         await ctx.send(content=member.mention, embed=embed, view=view)
 
     @commands.command()
@@ -120,7 +124,7 @@ class Coins(SentinelCog):
     async def set_coin_balance(
         self, ctx: SentinelContext, member: discord.Member, amount: int
     ):
-        await self.usm.set_balance(member.id, amount)
+        await self.bot.usm.set_balance(member.id, amount)
         await ctx.send(f"Set `{member}`'s balance to \N{Coin}`{amount:,}`")
 
 

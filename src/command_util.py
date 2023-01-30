@@ -1,8 +1,20 @@
-from typing import Annotated, Generic
-from .sentinel import Sentinel, SentinelContext, SentinelView, T
+from difflib import SequenceMatcher
+from typing import Annotated, Callable, Coroutine, Generic
+import typing
+
+from .sentinel import (
+    Sentinel,
+    SentinelCog,
+    SentinelContext,
+    SentinelView,
+    T,
+    TypedHybridCommand,
+    TypedHybridGroup,
+    SentinelErrors,
+)
 import discord
-from typing import Sequence, TypeVar, ParamSpec
 from discord.ext import commands
+from discord.app_commands.transformers import RangeTransformer
 
 import re
 
@@ -23,13 +35,9 @@ class Paginator(SentinelView, Generic[T]):
 
         self.current_page = 0
         self.min_page = 0
-        self.max_page = max(
-            (len(self.values) // self.page_size)
-            if (len(self.values) % self.page_size == 0)
-            else (len(self.values) // self.page_size + 1),
-            0,
-        )
-        self.max_page -= 1
+        self.max_page = len(self.values) // self.page_size
+        # if len(self.values) % self.page_size != 0:
+        #     self.max_page += 1
 
         self.display_values_index_start = 0
         self.display_values_index_end = min(len(self.values), self.page_size)
@@ -189,6 +197,115 @@ class StringArgParse(commands.Converter):
         return StringArgParse(
             lower=self._lower, upper=True, stripped=self._stripped, regex=self.regex
         )
+
+
+class UniversalComponentConverter(commands.Converter):
+    def __init__(
+        self,
+        *,
+        command: bool = True,
+        group: bool = True,
+        cog: bool = True,
+        raise_on_missing: bool = True,
+        return_check: Coroutine[
+            None,
+            None,
+            Callable[
+                [
+                    SentinelContext,
+                    commands.HybridCommand | commands.HybridGroup | commands.Cog,
+                ],
+                bool,
+            ],
+        ]
+        | None = None,
+        fuzzy_search_threshold: float = 0.9,
+    ):
+        self.command = command
+        self.group = group
+        self.cog = cog
+        self.raise_on_missing = raise_on_missing
+        self.return_check = return_check
+
+    @staticmethod
+    async def _default_return_check(
+        ctx: SentinelContext,
+        component: TypedHybridCommand | TypedHybridGroup | SentinelCog,
+    ) -> bool:
+        if isinstance(component, commands.HybridCommand):
+            return (
+                await component.can_run(ctx)
+                and not component.hidden
+                and not component.cog.hidden
+            )
+        elif isinstance(component, commands.HybridGroup):
+            return (
+                await component.can_run(ctx)
+                and not component.hidden
+                and not component.cog.hidden
+            )
+        elif isinstance(component, commands.Cog):
+            return not component.hidden
+        return False
+
+    def _fuzzy_search(
+        self, arg: str, component: TypedHybridCommand | TypedHybridGroup | SentinelCog
+    ) -> float:
+        if isinstance(component, commands.HybridCommand):
+            return fuzz.ratio(arg, component.name)
+        elif isinstance(component, commands.HybridGroup):
+            return fuzz.ratio(arg, component.name)
+        elif isinstance(component, commands.Cog):
+            return fuzz.ratio(arg, component.qualified_name)
+        return 0.0
+
+    async def convert(self, ctx: SentinelContext, arg: str) -> commands.HybridCommand | commands.HybridGroup | commands.Cog | None:  # type: ignore
+        self.return_check = self.return_check or self._default_return_check
+        if self.command:
+            if await CommandConverter().convert(ctx, arg) is not None:
+                return await CommandConverter().convert(ctx, arg)
+        if self.group:
+            if await GroupConverter().convert(ctx, arg) is not None:
+                return await GroupConverter().convert(ctx, arg)
+        if self.cog:
+            if await CogConverter().convert(ctx, arg) is not None:
+                return await CogConverter().convert(ctx, arg)
+        if self.raise_on_missing:
+            raise SentinelErrors.ComponentNotFound(f"Component {arg} not found")
+
+
+class CommandConverter(commands.Converter):
+    async def convert(
+        self, ctx: SentinelContext, arg: str
+    ) -> commands.HybridCommand | None:
+        for command in ctx.bot.walk_commands():
+            if not isinstance(command, commands.GroupMixin) and (
+                fuzz(arg, command.qualified_name) > 0.95
+                or fuzz(arg, command.name) > 0.95
+            ):
+                return command
+
+
+class GroupConverter(commands.Converter):
+    async def convert(
+        self, ctx: SentinelContext, arg: str
+    ) -> commands.HybridGroup | None:
+        for command in ctx.bot.walk_commands():
+            if isinstance(command, commands.HybridGroup) and (
+                fuzz(arg, command.qualified_name) > 0.95
+                or fuzz(arg, command.name) > 0.95
+            ):
+                return command
+
+
+class CogConverter(commands.Converter):
+    async def convert(self, ctx: SentinelContext, arg: str) -> commands.Cog | None:
+        for cog in ctx.bot.cogs.values():
+            if fuzz(arg, cog.qualified_name) > 0.95:
+                return cog
+
+def fuzz(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
 
 
 StringParam = Annotated[str, StringArgParse]

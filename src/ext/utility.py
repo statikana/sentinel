@@ -15,12 +15,8 @@ from ..command_types import RTFMMeta
 from discord.app_commands import describe
 
 
-class Utility(SentinelCog):
-    """
-    Commands that provide small, yet useful, services"""
-
-    def __init__(self, bot: Sentinel):
-        super().__init__(bot, "\N{Input Symbol for Numbers}")
+class Utility(SentinelCog, emoji="\N{Input Symbol for Numbers}"):
+    """Miscellaneous and occassionally useful commands"""
 
     @commands.hybrid_command()
     async def ping(self, ctx: SentinelContext):

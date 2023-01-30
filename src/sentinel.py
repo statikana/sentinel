@@ -16,8 +16,10 @@ from typing import (
     Coroutine,
     Generator,
     Generic,
+    Mapping,
     Optional,
     ParamSpec,
+    Self,
     Type,
     TypeVar,
     Union,
@@ -36,12 +38,12 @@ from selenium.webdriver import Firefox as SeleniumFirefox
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
 from . import error_types as SentinelErrors
+from .db_managers import UserManager, GuildManager, TagsManager
 
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
 
 __version__ = ("1", "0", "0")
-
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -53,8 +55,12 @@ class Sentinel(commands.Bot):
         self.apg: asyncpg.Pool
         self.guild_cache = SentinelCache(timeout=300)
         self.driver: SentinelDriver
+
+        self.usm: UserManager
+        self.gdm: GuildManager
+        self.tgm: TagsManager
         super().__init__(
-            command_prefix=">>",
+            command_prefix=_get_prefix,
             help_command=None,
             tree_cls=SentinelTree,
             intents=discord.Intents.all(),
@@ -75,6 +81,10 @@ class Sentinel(commands.Bot):
         await self.prepare_databases()
         await self.connect_driver()
         await self.reload_extensions()
+
+        self.usm = UserManager(self.apg)
+        self.gdm = GuildManager(self.apg)
+        self.tgm = TagsManager(self.apg)
 
     async def reload_extensions(
         self, ext_dir: str = ".\\src\\ext"
@@ -129,20 +139,27 @@ class Sentinel(commands.Bot):
         self.driver = SentinelDriver()
 
     @property
-    def commands(self) -> set["AnyTypedCommand"]:
-        return super().commands
+    def commands(self) -> set["TypedHybrid"]:
+        return super().commands # type: ignore
+    
+    @property
+    def cogs(self) -> Mapping[str, "SentinelCog"]:
+        return super().cogs # type: ignore
+    
+    def get_cog(self, name: str, /) -> Optional["SentinelCog"]:
+        return super().get_cog(name) # type: ignore
 
-    def get_command(self, name: str, /) -> Optional["AnyTypedCommand"]:
-        return super().get_command(name)
+    def get_command(self, name: str, /) -> Optional["TypedHybrid"]:
+        return super().get_command(name) # type: ignore
 
-    def walk_commands(self) -> Generator["AnyTypedCommand", None, None]:
-        return super().walk_commands()
+    def walk_commands(self) -> Generator["TypedHybrid", None, None]:
+        return super().walk_commands() # type: ignore
 
-    def add_command(self, command: "AnyTypedCommand", /) -> None:
+    def add_command(self, command: "TypedHybrid", /) -> None:
         super().add_command(command)
 
-    def remove_command(self, name: str, /) -> Optional["AnyTypedCommand"]:
-        return super().remove_command(name)
+    def remove_command(self, name: str, /) -> Optional["TypedHybrid"]:
+        return super().remove_command(name) # type: ignore
 
 
 _SentinelBotT = TypeVar("_SentinelBotT", bound=Sentinel, covariant=True)
@@ -178,71 +195,21 @@ class SentinelContext(commands.Context):
 
 
 class SentinelTree(discord.app_commands.CommandTree):
-    def __init__(self, bot: commands.Bot, **kwargs):
+    def __init__(self, bot: Sentinel, **kwargs):
         self.bot = bot
         super().__init__(client=bot, **kwargs)
 
     async def interaction_check(self, itx: discord.Interaction, /) -> bool:
+        await self.bot.usm.ensure_user(itx.user.id)
         if itx.type == discord.InteractionType.application_command:
             # TODO: automatically defer?
             pass
         return (
             itx.user.id
-            not in await self.bot.apg.fetch(  # type: ignore # mmmm, circlar references
+            not in await self.bot.apg.fetch(
                 "SELECT user_id FROM blacklist"
             )
         )
-
-
-class SentinelCog(commands.Cog):
-    def __init__(
-        self,
-        bot: Sentinel,
-        emoji: Union[discord.Emoji, str] = "\N{Black Question Mark Ornament}",
-        *,
-        hidden: bool = False,
-    ):
-        self.bot = bot
-        self.emoji = str(emoji)
-        self.hidden = hidden
-        super().__init__()
-
-    async def cog_load(self) -> None:
-        logging.debug(f"Cog Loaded: {self.__class__.__name__}")
-
-    async def cog_unload(self) -> None:
-        logging.debug(f"Cog Unloaded: {self.__class__.__name__}")
-
-
-class SentinelAIOSession(aiohttp.ClientSession):
-    def __init__(self):
-        super().__init__(
-            raise_for_status=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0"
-            },
-        )
-
-
-class SentinelDriver:
-    def __init__(self):
-        options = FirefoxOptions()
-        options.headless = True
-        options.binary_location = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
-        self.driver = SeleniumFirefox(
-            options=options,
-            executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe",
-        )
-
-    async def get(self, url: str, /, wait: float = 0.5) -> str:
-        thread_get = asyncio.to_thread(self.driver.get, url)
-        await thread_get
-        thread_get.close()
-        await asyncio.sleep(wait)
-        thread_return: Coroutine[Any, Any, str] = asyncio.to_thread(
-            self.driver.execute_script, "return document.documentElement.outerHTML"
-        )
-        return await thread_return
 
 
 class SentinelView(discord.ui.View):
@@ -278,6 +245,7 @@ class SentinelView(discord.ui.View):
     async def interaction_check(self, itx: discord.Interaction) -> bool:
         return all(
             {
+                await super().interaction_check(itx),
                 self.ctx.author == itx.user or self.any_responder,
                 self.ctx.channel == itx.channel or self.any_channel,
                 self.ctx.guild == itx.guild or self.any_guild,
@@ -291,6 +259,75 @@ class SentinelView(discord.ui.View):
                 child.disabled = True
         if self.message is not None:
             await self.message.edit(view=self)
+
+
+class SentinelCog(commands.Cog):
+    emoji: str
+    hidden: bool
+
+    def __init__(
+        self,
+        bot: Sentinel,
+        emoji: Union[discord.Emoji, str] | None = None,
+        *,
+        hidden: bool | None = None,
+    ):
+        self.bot = bot
+        self.emoji = str(emoji or self.emoji)
+        self.hidden = hidden or self.hidden
+        super().__init__()
+    
+    def __init_subclass__(cls, emoji: Union[discord.Emoji, str]= "\N{Black Question Mark Ornament}", hidden: bool = False) -> None:
+        cls.emoji = str(emoji)
+        cls.hidden = hidden
+        super().__init_subclass__()
+
+    async def cog_load(self) -> None:
+        logging.debug(f"Cog Loaded: {self.__class__.__name__}")
+
+    async def cog_unload(self) -> None:
+        logging.debug(f"Cog Unloaded: {self.__class__.__name__}")
+    
+    def get_commands(self) -> list["TypedHybridCommand"]:
+        new = []
+        for command in super().get_commands():
+            if not isinstance(command, commands.GroupMixin):
+                new.append(command)
+        return new
+    
+    def walk_commands(self) -> Generator["TypedHybridCommand", None, None]:
+        return super().walk_commands() # type: ignore
+
+
+class SentinelAIOSession(aiohttp.ClientSession):
+    def __init__(self):
+        super().__init__(
+            raise_for_status=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0"
+            },
+        )
+
+
+class SentinelDriver:
+    def __init__(self):
+        options = FirefoxOptions()
+        options.headless = True
+        options.binary_location = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+        self.driver = SeleniumFirefox(
+            options=options,
+            executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe",
+        )
+
+    async def get(self, url: str, /, wait: float = 0.5) -> str:
+        thread_get = asyncio.to_thread(self.driver.get, url)
+        await thread_get
+        thread_get.close()
+        await asyncio.sleep(wait)
+        thread_return: Coroutine[Any, Any, str] = asyncio.to_thread(
+            self.driver.execute_script, "return document.documentElement.outerHTML"
+        )
+        return await thread_return
 
 
 class SentinelPool(asyncpg.Pool):
@@ -330,12 +367,26 @@ class SentinelCacheEntry:
         self.time = int(
             time.time()
         )  # Ints are much faster to work with and no need for decimals
+    
+async def _get_prefix(bot: Sentinel, message: discord.Message) -> str:
+    if message.guild is None:
+        return ">>"
+    await bot.gdm.ensure_guild(message.guild.id)
+    return await bot.gdm.get_prefix(message.guild.id)
+
 
 
 SentinelCogT = TypeVar("SentinelCogT", bound=SentinelCog, covariant=True)
 
-TypedCommand = commands.Command[SentinelCogT, P, T]
-TypedHybridCommand = commands.HybridCommand[SentinelCogT, P, T]
-TypedGroup = commands.Group[SentinelCogT, P, T]
-TypedHybridGroup = commands.HybridGroup[SentinelCogT, P, T]
-AnyTypedCommand = Union[TypedCommand, TypedHybridCommand, TypedGroup, TypedHybridGroup]
+
+class TypedHybridCommandType(commands.HybridCommand, Generic[SentinelCogT, P, T] ):
+    pass
+
+class TypedHybridGroupType(commands.HybridGroup, Generic[SentinelCogT, P, T]):
+    @property
+    def commands(self) -> list["TypedHybridCommand"]:
+        return super().commands # type: ignore
+    
+TypedHybridCommand = TypedHybridCommandType[SentinelCog, P, T]
+TypedHybridGroup = TypedHybridGroupType[SentinelCog, P, T]
+TypedHybrid = Union[TypedHybridCommand, TypedHybridGroup]

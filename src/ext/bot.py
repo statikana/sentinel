@@ -6,11 +6,8 @@ from discord.app_commands import describe
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
 
 
-class Bot(SentinelCog):
+class Bot(SentinelCog, emoji="\N{Robot Face}"):
     """Bot-related commands"""
-
-    def __init__(self, bot: Sentinel):
-        super().__init__(bot, emoji="\N{Robot Face}")
 
     @commands.hybrid_group()
     async def bot(self, ctx: SentinelContext):

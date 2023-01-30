@@ -6,13 +6,10 @@ import asyncio
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
 
 
-class Fun(SentinelCog):
+class Fun(SentinelCog, emoji="\N{Party Popper}"):
     """
     Some fun commands to play around with! On some games, you can even do a lil' gambling!
     """
-
-    def __init__(self, bot: Sentinel):
-        super().__init__(bot, "\N{Party Popper}")
 
     @commands.hybrid_command()
     @describe(
