@@ -1,29 +1,18 @@
 from difflib import SequenceMatcher
-from typing import Annotated, Callable, Coroutine, Generic
+import inspect
+from typing import Annotated, Callable, Coroutine, Generic, TypeVar
 import typing
 
-from .sentinel import (
-    Sentinel,
-    SentinelCog,
-    SentinelContext,
-    SentinelView,
-    T,
-    TypedHybridCommand,
-    TypedHybridGroup,
-    SentinelErrors,
-)
+from .sentinel import SentinelContext, SentinelView, NumT
 import discord
 from discord.ext import commands
-from discord.app_commands.transformers import RangeTransformer
-
-import re
 
 
-class Paginator(SentinelView, Generic[T]):
+class Paginator(SentinelView, Generic[NumT]):
     def __init__(
         self,
         ctx: SentinelContext,
-        values: tuple[T],
+        values: tuple[NumT],
         page_size: int,
         *,
         timeout: float = 600.0,
@@ -133,7 +122,7 @@ class Paginator(SentinelView, Generic[T]):
         if self.message is not None:
             await self.message.edit(embed=embed, view=self)
 
-    async def embed(self, value_range: tuple[T]) -> discord.Embed:
+    async def embed(self, value_range: tuple[NumT]) -> discord.Embed:
         raise NotImplementedError
 
 
@@ -160,154 +149,5 @@ class ParamDefaults:
     )
 
 
-class StringArgParse(commands.Converter):
-    def __init__(
-        self,
-        lower: bool = False,
-        upper: bool = False,
-        stripped: list[str] | None = None,
-        regex: str | None = None,
-    ):
-        self._lower = lower
-        self._upper = upper
-        self._stripped = stripped
-        self.regex = regex
-
-    async def convert(self, ctx: commands.Context, arg: str) -> str:
-        if self._lower:
-            arg = arg.lower()
-        if self.upper:
-            arg = arg.upper()
-        if self._stripped is not None:
-            for chars in self._stripped:
-                arg = arg.strip(chars)
-        if self.regex is not None:
-            if not re.match(self.regex, arg):
-                raise commands.BadArgument(f"Invalid argument: {arg}")
-        return arg
-
-    @property
-    def lower(self) -> "StringArgParse":
-        return StringArgParse(
-            lower=True, upper=self._upper, stripped=self._stripped, regex=self.regex
-        )
-
-    @property
-    def upper(self) -> "StringArgParse":
-        return StringArgParse(
-            lower=self._lower, upper=True, stripped=self._stripped, regex=self.regex
-        )
-
-
-class UniversalComponentConverter(commands.Converter):
-    def __init__(
-        self,
-        *,
-        command: bool = True,
-        group: bool = True,
-        cog: bool = True,
-        raise_on_missing: bool = True,
-        return_check: Coroutine[
-            None,
-            None,
-            Callable[
-                [
-                    SentinelContext,
-                    commands.HybridCommand | commands.HybridGroup | commands.Cog,
-                ],
-                bool,
-            ],
-        ]
-        | None = None,
-        fuzzy_search_threshold: float = 0.9,
-    ):
-        self.command = command
-        self.group = group
-        self.cog = cog
-        self.raise_on_missing = raise_on_missing
-        self.return_check = return_check
-
-    @staticmethod
-    async def _default_return_check(
-        ctx: SentinelContext,
-        component: TypedHybridCommand | TypedHybridGroup | SentinelCog,
-    ) -> bool:
-        if isinstance(component, commands.HybridCommand):
-            return (
-                await component.can_run(ctx)
-                and not component.hidden
-                and not component.cog.hidden
-            )
-        elif isinstance(component, commands.HybridGroup):
-            return (
-                await component.can_run(ctx)
-                and not component.hidden
-                and not component.cog.hidden
-            )
-        elif isinstance(component, commands.Cog):
-            return not component.hidden
-        return False
-
-    def _fuzzy_search(
-        self, arg: str, component: TypedHybridCommand | TypedHybridGroup | SentinelCog
-    ) -> float:
-        if isinstance(component, commands.HybridCommand):
-            return fuzz.ratio(arg, component.name)
-        elif isinstance(component, commands.HybridGroup):
-            return fuzz.ratio(arg, component.name)
-        elif isinstance(component, commands.Cog):
-            return fuzz.ratio(arg, component.qualified_name)
-        return 0.0
-
-    async def convert(self, ctx: SentinelContext, arg: str) -> commands.HybridCommand | commands.HybridGroup | commands.Cog | None:  # type: ignore
-        self.return_check = self.return_check or self._default_return_check
-        if self.command:
-            if await CommandConverter().convert(ctx, arg) is not None:
-                return await CommandConverter().convert(ctx, arg)
-        if self.group:
-            if await GroupConverter().convert(ctx, arg) is not None:
-                return await GroupConverter().convert(ctx, arg)
-        if self.cog:
-            if await CogConverter().convert(ctx, arg) is not None:
-                return await CogConverter().convert(ctx, arg)
-        if self.raise_on_missing:
-            raise SentinelErrors.ComponentNotFound(f"Component {arg} not found")
-
-
-class CommandConverter(commands.Converter):
-    async def convert(
-        self, ctx: SentinelContext, arg: str
-    ) -> commands.HybridCommand | None:
-        for command in ctx.bot.walk_commands():
-            if not isinstance(command, commands.GroupMixin) and (
-                fuzz(arg, command.qualified_name) > 0.95
-                or fuzz(arg, command.name) > 0.95
-            ):
-                return command
-
-
-class GroupConverter(commands.Converter):
-    async def convert(
-        self, ctx: SentinelContext, arg: str
-    ) -> commands.HybridGroup | None:
-        for command in ctx.bot.walk_commands():
-            if isinstance(command, commands.HybridGroup) and (
-                fuzz(arg, command.qualified_name) > 0.95
-                or fuzz(arg, command.name) > 0.95
-            ):
-                return command
-
-
-class CogConverter(commands.Converter):
-    async def convert(self, ctx: SentinelContext, arg: str) -> commands.Cog | None:
-        for cog in ctx.bot.cogs.values():
-            if fuzz(arg, cog.qualified_name) > 0.95:
-                return cog
-
-
 def fuzz(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
-
-
-StringParam = Annotated[str, StringArgParse]
-LowerString = commands.param(converter=StringParam.lower)

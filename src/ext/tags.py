@@ -1,12 +1,11 @@
-from typing import Annotated
 import discord
 from discord.ext import commands
 from discord.app_commands import describe
 
-from difflib import SequenceMatcher
-
 from ..command_types import TagEntry
-from ..command_util import StringArgParse, StringParam, LowerString, ParamDefaults, fuzz
+from ..command_util import ParamDefaults, fuzz
+from ..converters import StringParam, LowerString, fuzz
+
 
 from ..sentinel import (
     Sentinel,
@@ -15,7 +14,6 @@ from ..sentinel import (
     SentinelErrors,
 )
 from ..command_util import Paginator
-from ..db_managers import TagsManager
 
 
 class Tags(SentinelCog, emoji="\N{Label}"):

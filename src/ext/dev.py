@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from typing import Optional, Sequence
 
-from ..sentinel import T, Sentinel, SentinelCog, SentinelContext
+from ..sentinel import NumT, Sentinel, SentinelCog, SentinelContext
 from ..command_util import Paginator, ParamDefaults
 
 

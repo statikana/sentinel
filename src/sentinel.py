@@ -48,6 +48,8 @@ __version__ = ("1", "0", "0")
 P = ParamSpec("P")
 T = TypeVar("T")
 
+NumT = TypeVar("NumT", type[int], type[float])
+
 
 class Sentinel(commands.Bot):
     def __init__(self):

@@ -1,14 +1,14 @@
 import discord
 from discord.ext import commands
-from discord.app_commands import describe, Range
+from discord.app_commands import describe
 
 from ..sentinel import (
     Sentinel,
     SentinelCog,
     SentinelContext,
     SentinelView,
-    SentinelPool,
 )
+from ..converters import Range
 from ..command_util import ParamDefaults
 from ..db_managers import UserManager
 
@@ -31,6 +31,9 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
 
     @coins.command()
     @commands.guild_only()
+    @describe(
+        member="The member to check the balance of. Defaults to the author",
+    )
     async def balance(
         self, ctx: SentinelContext, member: discord.Member = ParamDefaults.member
     ):
@@ -51,7 +54,9 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
         member="The member to give coins to",
         amount="The amount of coins to give. Must be at least one, and no more than your balance",
     )
-    async def give(self, ctx: SentinelContext, member: discord.Member, amount: int):
+    async def give(
+        self, ctx: SentinelContext, member: discord.Member, amount: int = Range(int, 1)
+    ):
         """Give coins to another member"""
         if amount < 1:
             embed = ctx.embed(title="Invalid Amount", color=discord.Color.red())
@@ -88,7 +93,9 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
 
     @coins.command()
     @commands.guild_only()
-    async def request(self, ctx: SentinelContext, member: discord.Member, amount: int):
+    async def request(
+        self, ctx: SentinelContext, member: discord.Member, amount: int = Range(int, 1)
+    ):
         """Request coins from another member"""
         if amount < 1:
             raise commands.BadArgument("Invalid amount")
@@ -135,7 +142,7 @@ class GiveCoinsConfirmation(SentinelView):
         usm: UserManager,
         giver: discord.Member,
         receiver: discord.Member,
-        amount: Range[int, 1],
+        amount: int,
     ):
         self.giver = giver
         self.receiver = receiver

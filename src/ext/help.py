@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-
+from discord.app_commands.transformers import CommandParameter
+from discord import AppCommandOptionType
 
 from ..sentinel import (
     Sentinel,
@@ -11,7 +12,7 @@ from ..sentinel import (
     TypedHybridGroup,
     TypedHybrid,
 )
-from ..command_util import UniversalComponentConverter
+from ..converters import UniversalComponentConverter
 
 
 class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
@@ -42,7 +43,10 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
             await self.send_cog_help(ctx, query)
 
     async def send_all_help(self, ctx: SentinelContext):
-        ...
+        embed = ctx.embed(title="Help", description="*Please select a cog*")
+        view = SentinelView(ctx)
+        view.add_item(self.select_cog_item(ctx))
+        await ctx.send(embed=embed, view=view)
 
     async def send_command_help(
         self, ctx: SentinelContext, command: TypedHybridCommand
@@ -52,13 +56,14 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
 
         embed = ctx.embed(
             title=title,
-            description=get_command_description(command),
+            description=get_command_description(command, False),
         )
         embed.add_field(
             name="Usage",
             value=get_command_usage(ctx, command),
             inline=False,
         )
+        add_command_params(embed, command)
         view = SentinelView(ctx)
         if command.parent is not None:
             view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
@@ -68,7 +73,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
     async def send_group_help(self, ctx: SentinelContext, group: TypedHybridGroup):
         embed = ctx.embed(
             title=f"Help: `{group.name}` [`{group.qualified_name}`]",
-            description=f"{get_group_description(group)}",
+            description=f"{get_group_description(group)}]\n**Please use the dropdown to select a command**",
         )
         embed.add_field(
             name="Usage",
@@ -81,7 +86,8 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
 
     async def send_cog_help(self, ctx: SentinelContext, cog: SentinelCog):
         embed = ctx.embed(
-            title=f"Help: `{cog.qualified_name}`", description=f"*{cog.description}*"
+            title=f"Help: `{cog.qualified_name}`",
+            description=f"*{cog.description}*\n**Please use the dropdown to select a command**",
         )
         view = SentinelView(ctx)
         view.add_item(self.select_command_item_from_cog(ctx, cog))
@@ -122,10 +128,6 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
             view = SentinelView(ctx)
             view.add_item(self.select_command_item_from_cog(ctx, cog))
             view.add_item(self.select_cog_item(ctx))
-            print(
-                "THIENIENF",
-                view.children[0].options,
-            )  # type: ignore
             await itx.response.edit_message(embed=embed, view=view)
 
         sel.callback = callback
@@ -167,7 +169,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
 
             embed = ctx.embed(
                 title=f"Help: `{command.name}` [`{command.qualified_name}`]",
-                description=get_command_description(command),
+                description=get_command_description(command, False),
             )
             embed.add_field(
                 name="Usage",
@@ -214,7 +216,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
 
             embed = ctx.embed(
                 title=f"Help: `{command.name}` [`{command.qualified_name}`]",
-                description=get_command_description(command),
+                description=get_command_description(command, False),
             )
             embed.add_field(
                 name="Usage",
@@ -242,10 +244,9 @@ def add_arrow_on_selected(select: discord.ui.Select, chosen: discord.SelectOptio
 def get_command_usage(ctx: SentinelContext, command: TypedHybridCommand) -> str:
     formatted_params = ""
     for name, param in command.params.items():
-        try:
-            param_type = param.annotation.__name__
-        except AttributeError:
-            param_type = f"Range({param.annotation.type.__name__}){'{'+param.annotation.min_value+','+param.annotation.max_value+'}'}"
+        if command.app_command is None:
+            continue
+        param_type = get_param_repr(param)
         if not param.default in (param.empty, None):
             formatted_params += f"[{name}: {param_type}] "
         else:
@@ -257,16 +258,43 @@ def get_group_usage(ctx: SentinelContext, group: TypedHybridGroup) -> str:
     return f"```{ctx.prefix}{group.qualified_name} <subcommand>```"
 
 
-def get_command_description(command: TypedHybridCommand) -> str:
+def add_command_params(embed: discord.Embed, command: TypedHybridCommand) -> None:
+    if command.app_command is None:
+        return
+    for name, app_param in command.app_command._params.items():
+        com_param = command.params[name]
+        if com_param.required:
+            value = (
+                f"*{app_param.description or 'No Description'}*\n**Required:** `True`"
+            )
+        else:
+            value = f"*{app_param.description or 'No Description'}*\nRequired: `False`\nDefault: `{com_param.displayed_default}`"
+        embed.add_field(
+            name=f"**__Param `{app_param.display_name}` [Type `{get_param_repr(com_param)}`]__**",
+            value=value,
+            inline=False,
+        )
+
+
+def get_param_repr(param: commands.Parameter) -> str:
+    if param.annotation is param.empty:
+        return "Any"
+    try:
+        return param.annotation.__name__
+    except AttributeError:
+        return str(param.annotation)
+
+
+def get_command_description(command: TypedHybridCommand, cutoff: bool = True) -> str:
     dec = command.short_doc or "No description provided."
-    if len(dec) > 100:
+    if len(dec) > 100 and cutoff:
         return dec[:94] + "..."
     return f"*{dec}*"
 
 
-def get_group_description(group: TypedHybridGroup) -> str:
+def get_group_description(group: TypedHybridGroup, cutoff: bool = True) -> str:
     dec = group.short_doc or "No description provided."
-    if len(dec) > 100:
+    if len(dec) > 100 and cutoff:
         return dec[:94] + "..."
     return f"*{dec}*"
 
