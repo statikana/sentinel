@@ -1,7 +1,5 @@
 import discord
 from discord.ext import commands
-from discord.app_commands.transformers import CommandParameter
-from discord import AppCommandOptionType
 
 from ..sentinel import (
     Sentinel,

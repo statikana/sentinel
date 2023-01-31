@@ -151,3 +151,8 @@ class ParamDefaults:
 
 def fuzz(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
+
+def lim(string: str, length: int, *, suffix: str = "...") -> str:
+    if len(string) > length:
+        return string[: length - len(suffix)] + suffix
+    return string
