@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from discord.app_commands import describe
 import asyncio
-from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
+from ..sentinel import Sentinel, SentinelCog, SentinelContext
 
 from ..converters import Range
 
@@ -26,7 +26,7 @@ class Fun(SentinelCog, emoji="\N{Party Popper}"):
         lower: int = Range(int, 0, 10000),
         upper: int = Range(int, 0, 10000),
         maximum_attempts: int = Range(int, 1, 20),
-        gamble_amount: int = Range(int, 0),
+        gamble_amount: int = Range(int, 0, default=0),
     ):
         """Try to guess a number between a given range!"""
         attempts = 0

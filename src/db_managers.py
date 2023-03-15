@@ -1,7 +1,8 @@
 import datetime
+from enum import Enum
 import random
 import time
-from typing import overload
+from typing import Optional, overload, Literal
 import asyncpg
 
 from config import DEFAULT_PREFIX
@@ -151,30 +152,54 @@ class TagsManager(SentinelDatabase):
         self.gdm = GuildManager(apg)
         self.usm = UserManager(apg)
 
-    async def get_tag_by_name(self, guild_id: int, tag_name: str) -> TagEntry | None:
+    @overload
+    async def get_tag_by_name(
+        self, guild_id: int, tag_name: str, *, allow_redirect: Literal[False]
+    ) -> TagEntry | MetaTagEntry | None:
+        pass
+
+    @overload
+    async def get_tag_by_name(
+        self, guild_id: int, tag_name: str, *, allow_redirect: Literal[True]
+    ) -> TagEntry | None:
+        pass
+
+    async def get_tag_by_name(
+        self, guild_id: int, tag_name: str, *, allow_redirect: bool
+    ) -> TagEntry | MetaTagEntry | None:
         meta_result = await self.apg.fetchrow(
             "SELECT * FROM tag_meta WHERE guild_id = $1 AND tag_name = $2",
             guild_id,
             tag_name,
         )
+        updated_meta_result: asyncpg.Record | None = None
         if meta_result is None:
             return None
-
-        search_id: int
+        redirected: bool
+        resolved_id: int
         if meta_result["alias_to"] is not None:
-            search_id = meta_result["alias_to"]
+            if allow_redirect:
+                updated_meta_result = await self.apg.fetchrow(
+                    "SELECT * FROM tag_meta WHERE tag_id = $1",
+                    meta_result["alias_to"],
+                )
+                resolved_id = meta_result["alias_to"]
+                redirected = True
+            else:
+                return self._form_meta_tag(meta_result)
         else:
-            search_id = meta_result["tag_id"]
+            resolved_id = meta_result["tag_id"]
+            redirected = False
 
         full_result = await self.apg.fetchrow(
-            "SELECT * FROM tags WHERE tag_id = $1", search_id
+            "SELECT * FROM tags WHERE tag_id = $1", resolved_id
         )
-        if full_result is None:  # Should never happen
-            await self.apg.execute(
-                "DELETE FROM tag_meta WHERE tag_id = $1", search_id
-            )  # At some point in time this tag was deleted, but the meta wasn't. Delete the meta, cascades to main table
-            return None
-        return self._form_tag(meta_result, full_result)
+        return self._form_tag(
+            updated_meta_result if redirected else meta_result,
+            full_result,
+            self._form_meta_tag(meta_result) if redirected else None,
+        )
+        # if we were redirected, give the origianl name that was queried
 
     async def get_tag_by_id(self, tag_id: int) -> TagEntry | None:
         meta_result = await self.apg.fetchrow(
@@ -182,29 +207,21 @@ class TagsManager(SentinelDatabase):
         )
         if meta_result is None:
             return None
-
-        search_id: int
-        if meta_result["alias_to"] is not None:
-            search_id = meta_result["alias_to"]
-        else:
-            search_id = meta_result["tag_id"]
-
         full_result = await self.apg.fetchrow(
-            "SELECT * FROM tags WHERE tag_id = $1", search_id
+            "SELECT * FROM tags WHERE tag_id = $1", tag_id
         )
-        if full_result is None:
-            await self.apg.execute("DELETE FROM tag_meta WHERE tag_id = $1", search_id)
-            return None
-
         return self._form_tag(meta_result, full_result)
 
     async def get_tags_by_owner(self, owner_id: int) -> list[TagEntry]:
-        tag_ids = await self.apg.fetch(
-            "SELECT tag_id FROM tags WHERE owner_id = $1", owner_id
+        tag_data = await self.apg.fetch(
+            "SELECT * FROM tag_meta INNER JOIN tags ON tag_meta.tag_id = tags.tag_id WHERE owner_id = $1",
+            owner_id,
         )
         tags = []
-        for tag_id in tag_ids:
-            tags.append(await self.get_tag_by_id(tag_id["tag_id"]))
+        for tag_node in tag_data:
+            tags.append(
+                self._form_tag(tag_node, tag_node)
+            )  # does this count as duck typing?
         return tags
 
     async def get_tags_in_guild(self, guild_id: int) -> list[TagEntry]:
@@ -218,188 +235,168 @@ class TagsManager(SentinelDatabase):
             tags.append(await self.get_tag_by_id(tag_node["tag_id"]))
         return tags
 
-    @overload
     async def create_tag(
-        self,
-        tag_name: str,
-        tag_content: str,
-        owner_id: int,
-        guild_id: int,
-        *,
-        safe_insert: bool = False
-    ) -> TagEntry:
-        pass
-
-    @overload
-    async def create_tag(
-        self,
-        tag_name: str,
-        tag_content: str,
-        owner_id: int,
-        guild_id: int,
-        *,
-        safe_insert: bool = True
-    ) -> TagEntry | None:
-        pass
-
-    async def create_tag(
-        self,
-        tag_name: str,
-        tag_content: str,
-        owner_id: int,
-        guild_id: int,
-        *,
-        safe_insert: bool = True
-    ) -> TagEntry | None:
+        self, tag_name: str, tag_content: str, owner_id: int, guild_id: int
+    ) -> "ReturnCode":
 
         tag_id = self._generate_tag_id(owner_id, guild_id)
-        if safe_insert:
-            if await self.get_tag_by_name(guild_id, tag_name) is not None:
-                return None
 
-        full_tag = await self.apg.execute(
-            # "INSERT INTO tags (tag_id, owner_id, tag_content) VALUES ($1, $2, $3) ON CONFLICT DO UPDATE SET tag_id = $1, owner_id = $2, tag_content = $3 RETURNING *",
-            "INSERT INTO tags (tag_id, owner_id, tag_content) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING *",
+        meta_result = await self.apg.execute(
+            "INSERT INTO tag_meta (tag_id, owner_id, guild_id, tag_name) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING *",
             tag_id,
             owner_id,
+            guild_id,
+            tag_name,
+        )
+        if meta_result is None:
+            return ReturnCode.ALREADY_EXISTS
+        full_result = await self.apg.execute(
+            "INSERT INTO tags (tag_id, tag_content) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            tag_id,
             tag_content,
         )
-        if isinstance(full_tag, str):
-            full_tag = await self.apg.fetchrow(
-                "SELECT * FROM tags WHERE tag_id = $1", tag_id
-            )
-        tag_meta = await self.apg.execute(
-            # "INSERT INTO tag_meta (tag_id, tag_name, guild_id) VALUES ($1, $2, $3) ON CONFLICT DO UPDATE SET tag_id = $1, tag_name = $2, guild_id = $3 RETURING *",
-            "INSERT INTO tag_meta (tag_id, tag_name, guild_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING *",
-            tag_id,
-            tag_name,
-            guild_id,
-        )
-        if isinstance(tag_meta, str):
-            tag_meta = await self.apg.fetchrow(
-                "SELECT * FROM tag_meta WHERE tag_id = $1", tag_id
-            )
-        return self._form_tag(tag_meta, full_tag)
-
-    async def get_tag_exists_by_name(self, guild_id: int, tag_name: str) -> bool:
-        return (
-            await self.apg.fetchrow(
-                "SELECT * FROM tag_meta WHERE guild_id = $1 AND tag_name = $2",
-                guild_id,
-                tag_name,
-            )
-            is not None
-        )
-
-    async def get_tag_exists_by_id(self, tag_id: int) -> bool:
-        return (
-            await self.apg.fetchrow("SELECT * FROM tags WHERE tag_id = $1", tag_id)
-            is not None
-        )
+        if full_result is None:
+            await self.apg.execute("DELETE FROM tag_meta WHERE tag_id = $1", tag_id)
+            return ReturnCode.ALREADY_EXISTS
+        return ReturnCode.SUCCESS
 
     async def edit_tag_by_name(
         self,
         tag_name: str,
-        guild_id: int,
         new_content: str,
-        check_tag_owner: bool = True,
-        check_tag_exists: bool = True,
-        owner_id: int | None = None,
-    ) -> bool:
-        if check_tag_owner or check_tag_exists:
-            tag = await self.get_tag_by_name(guild_id, tag_name)
-            if check_tag_exists and (tag is None or tag.alias_to is not None):
-                return False
-            if check_tag_owner and tag is not None and tag.owner_id != owner_id:
-                return False
-        tag_id = await self.apg.fetchrow(
-            "SELECT tag_id FROM tag_meta WHERE tag_name = $1 AND guild_id = $2",
-            tag_name,
-            guild_id,
-        )
-        if tag_id is None:
-            return False
+        guild_id: int,
+        *,
+        owner_id: int | None = None
+    ) -> "ReturnCode":
+        tag = await self.get_tag_by_name(guild_id, tag_name, allow_redirect=True)
+        if tag is None:
+            return ReturnCode.NOT_FOUND
+        if owner_id is not None and tag.owner_id != owner_id:
+            return ReturnCode.MISSING_PERMISSIONS
         await self.apg.execute(
             "UPDATE tags SET tag_content = $1 WHERE tag_id = $2",
             new_content,
-            tag_id["tag_id"],
+            tag.tag_id,
         )
-        return True
+        return ReturnCode.SUCCESS
 
-    async def delete_tag_by_name(
-        self,
-        tag_name: str,
-        guild_id: int,
-        check_tag_owner: bool = True,
-        check_tag_exists: bool = True,
-        owner_id: int | None = None,
-    ) -> bool:
-        if check_tag_owner or check_tag_exists:
-            tag = await self.get_tag_by_name(guild_id, tag_name)
-            if check_tag_exists and (tag is None or tag.alias_to is not None):
-                return False
-            if check_tag_owner and tag is not None and tag.owner_id != owner_id:
-                return False
-
-        await self.apg.execute(
-            "DELETE FROM tags WHERE tag_name = $1 AND guild_id = $2", tag_name, guild_id
-        )  # Should cascade to tag_meta
-        return True
-
-    async def delete_tag_by_id(self, tag_id: int) -> bool:
+    async def edit_tag_by_id(
+        self, tag_id: int, new_content: str, owner_id: int | None = None
+    ) -> "ReturnCode":
         tag = await self.get_tag_by_id(tag_id)
         if tag is None:
-            return False
+            return ReturnCode.NOT_FOUND
+        if owner_id is not None and tag.owner_id != owner_id:
+            return ReturnCode.MISSING_PERMISSIONS
         await self.apg.execute(
-            "DELETE FROM tags WHERE tag_id = $1", tag_id
-        )  # Should cascade to tag_meta
-        return True
+            "UPDATE tags SET tag_content = $1 WHERE tag_id = $2",
+            new_content,
+            tag.tag_id,
+        )
+        return ReturnCode.SUCCESS
+
+    async def delete_tag_by_name(
+        self, tag_name: str, guild_id: int, owner_id: int | None = None
+    ) -> "ReturnCode":
+        tag = await self.get_tag_by_name(guild_id, tag_name, allow_redirect=False)
+        if tag is None:
+            return ReturnCode.NOT_FOUND
+        if isinstance(tag, MetaTagEntry):
+            return ReturnCode.NOT_ALIAS
+        if owner_id is not None and tag.owner_id != owner_id:
+            return ReturnCode.MISSING_PERMISSIONS
+        await self.apg.execute("DELETE FROM tag_meta WHERE tag_id = $1", tag.tag_id)
+        return ReturnCode.SUCCESS
+
+    async def delete_tag_by_id(
+        self, tag_id: int, owner_id: int | None = None
+    ) -> "ReturnCode":
+        tag = await self.get_tag_by_id(tag_id)
+        if tag is None:
+            return ReturnCode.NOT_FOUND
+        if owner_id is not None and tag.owner_id != owner_id:
+            return ReturnCode.MISSING_PERMISSIONS
+        await self.apg.execute("DELETE FROM tag_meta WHERE tag_id = $1", tag.tag_id)
+        return ReturnCode.SUCCESS
 
     async def create_alias(
-        self, tag_name: str, owner_id: int, guild_id: int, alias_to: int
-    ):
-        # Tag aliases exist only within tag_meta
-        tag_id = self._generate_tag_id(owner_id, guild_id)
-        await self.apg.execute(
-            "INSERT INTO tag_meta (tag_id, tag_name, guild_id, alias_to) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            tag_id,
+        self,
+        tag_name: str,
+        alias_to: int,
+        owner_id: int,
+        guild_id: int,
+    ) -> "ReturnCode":
+        result = await self.apg.execute(
+            "INSERT INTO tag_meta (tag_id, tag_name, owner_id, guild_id, alias_to) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING RETURNING *",
+            self._generate_tag_id(owner_id, guild_id),
             tag_name,
+            owner_id,
             guild_id,
             alias_to,
         )
+        if result is None or result == "INSERT 0 0":
+            return ReturnCode.ALREADY_EXISTS
+        return ReturnCode.SUCCESS
 
-    async def delete_alias(self, tag_name: str, guild_id: int) -> bool:
-        result = await self.apg.execute(
-            "DELETE FROM tag_meta WHERE tag_name = $1 AND guild_id = $2 RETURING *",
-            tag_name,
-            guild_id,
-        )
-        return result is not None
+    async def delete_alias(
+        self, tag_name: str, guild_id: int, owner_id: int | None = None
+    ) -> "ReturnCode":
+        tag = await self.get_tag_by_name(guild_id, tag_name, allow_redirect=False)
+        if tag is None:
+            return ReturnCode.NOT_FOUND
+        if not isinstance(tag, MetaTagEntry):
+            return ReturnCode.NOT_ALIAS
+        if owner_id is not None and tag.owner_id != owner_id:
+            return ReturnCode.MISSING_PERMISSIONS
+        await self.apg.execute("DELETE FROM tag_meta WHERE tag_id = $1", tag.tag_id)
+        return ReturnCode.SUCCESS
 
-    async def increment_tag_uses(self, tag_id: int, amount: int = 1):
+    async def increment_tag_uses(self, tag_id: int, amount: int = 1) -> None:
         await self.apg.execute(
-            "UPDATE tag_meta SET tag_uses = tag_uses + $2 WHERE tag_id = $1",
+            "UPDATE tags SET tag_uses = tag_uses + $2 WHERE tag_id = $1",
             tag_id,
             amount,
         )
 
-    async def transfer_tag_ownership(self, tag_id: int, new_owner_id: int) -> None:
+    async def transfer_tag_ownership(
+        self, tag_id: int, new_owner_id: int, owner_id: int | None = None
+    ) -> "ReturnCode":
+        tag = await self.get_tag_by_id(tag_id)
+        if tag is None:
+            return ReturnCode.NOT_FOUND
+        if owner_id is not None and tag.owner_id != owner_id:
+            return ReturnCode.MISSING_PERMISSIONS
         await self.apg.execute(
-            "UPDATE tags SET owner_id = $1 WHERE tag_id = $2", new_owner_id, tag_id
+            "UPDATE tag_meta SET owner_id = $2 WHERE tag_id = $1",
+            tag_id,
+            new_owner_id,
         )
+        return ReturnCode.SUCCESS
 
     def _generate_tag_id(self, owner_id: int, guild_id: int) -> int:
-        return (int(time.time()) | owner_id << 32 | guild_id << 48) ** 0.25
+        return int((int(time.time()) | owner_id | guild_id))
 
-    def _form_tag(self, meta_result, full_result) -> TagEntry:
+    def _form_tag(
+        self, meta_result, full_result, redirected_from: Optional[MetaTagEntry] = None
+    ) -> TagEntry:
         return TagEntry(
             tag_id=full_result["tag_id"],
             tag_name=meta_result["tag_name"],
-            uses=meta_result["tag_uses"],
+            uses=full_result["tag_uses"],
+            owner_id=meta_result["owner_id"],
             guild_id=meta_result["guild_id"],
-            owner_id=full_result["owner_id"],
             tag_content=full_result["tag_content"],
             created_at=full_result["created_at"],
+            redirected_from=redirected_from,
+        )
+
+    def _form_meta_tag(self, result) -> MetaTagEntry:
+        return MetaTagEntry(
+            tag_id=result["tag_id"],
+            tag_name=result["tag_name"],
+            owner_id=result["owner_id"],
+            guild_id=result["guild_id"],
+            alias_to=result["alias_to"],
         )
 
 
@@ -480,3 +477,13 @@ class GuildManager(SentinelDatabase):
             prime_status=result["prime_status"],
             joined_at=result["joined_at"],
         )
+
+
+class ReturnCode(Enum):
+    SUCCESS = 0
+    ALREADY_EXISTS = 1
+    NOT_FOUND = 2
+    MISSING_PERMISSIONS = 3
+    IS_ALIAS = 4
+    NOT_ALIAS = 5
+    UNKNOWN_ERROR = 6

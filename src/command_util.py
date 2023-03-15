@@ -25,8 +25,8 @@ class Paginator(SentinelView, Generic[NumT]):
         self.current_page = 0
         self.min_page = 0
         self.max_page = len(self.values) // self.page_size
-        # if len(self.values) % self.page_size != 0:
-        #     self.max_page += 1
+        if len(self.values) % self.page_size == 0:
+            self.max_page -= 1
 
         self.display_values_index_start = 0
         self.display_values_index_end = min(len(self.values), self.page_size)
@@ -151,6 +151,7 @@ class ParamDefaults:
 
 def fuzz(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
+
 
 def lim(string: str, length: int, *, suffix: str = "...") -> str:
     if len(string) > length:

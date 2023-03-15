@@ -1,3 +1,4 @@
+import logging
 import discord
 from discord.ext import commands
 from typing import Optional, Sequence
@@ -17,6 +18,7 @@ class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
             description="\n".join(description),
         )
         await ctx.send(embed=embed)
+        logging.info(f"Reloaded {len(exts)} extensions and {len(utils)} utils")
 
     @commands.command()
     async def sync(self, ctx: SentinelContext, guild_id: Optional[int]):

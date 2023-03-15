@@ -13,7 +13,7 @@ from ..sentinel import (
 from ..converters import UniversalComponentConverter
 
 
-class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
+class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
     """Contains help commands"""
 
     @commands.hybrid_command()
@@ -134,7 +134,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
     def select_command_item_from_group(
         self, ctx: SentinelContext, group: TypedHybridGroup | None
     ) -> discord.ui.Select:
-        iter_commands: set[TypedHybridCommand[[SentinelCog]]] = set()
+        iter_commands: set[TypedHybridCommand] = set()
         if group is None:
             for cog in self.bot.cogs.values():
                 iter_commands.update(cog.get_commands())
@@ -154,7 +154,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
                 )
             )
         sel = discord.ui.Select(
-            placeholder="Select a Command",
+            placeholder="Select a Command from this Group",
             options=options,
             min_values=1,
             max_values=1,
@@ -188,7 +188,11 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
     ) -> discord.ui.Select:
         options: list[discord.SelectOption] = []
         for command in ctx.bot.walk_commands():
-            if isinstance(command, commands.GroupMixin) or command.hidden:
+            if (
+                isinstance(command, commands.GroupMixin)
+                or command.hidden
+                or not isinstance(command, commands.HybridCommand)
+            ):
                 continue
             if command.cog is None or command.cog.qualified_name != cog.qualified_name:
                 continue
@@ -197,10 +201,11 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
                     label=command.qualified_name,
                     description=get_command_description(command),
                     default=False,
+                    emoji=command.cog.emoji if command.cog is not None else None,
                 )
             )
         sel = discord.ui.Select(
-            placeholder="Select a Command",
+            placeholder="Select a Command from this Cog",
             options=options,
             min_values=1,
             max_values=1,
@@ -222,8 +227,10 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}"):
                 inline=False,
             )
             view = SentinelView(ctx)
-            if command.parent is not None:
-                view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
+            # if command.parent is not None:
+            #     view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
+            # This was accessed via the cog, so we don't need to go back to the group
+            view.add_item(self.select_command_item_from_cog(ctx, command.cog))
             view.add_item(self.select_cog_item(ctx))
             await itx.response.edit_message(embed=embed, view=view)
 
@@ -261,7 +268,7 @@ def add_command_params(embed: discord.Embed, command: TypedHybridCommand) -> Non
         return
     for name, app_param in command.app_command._params.items():
         com_param = command.params[name]
-        if com_param.required:
+        if com_param.default is commands.Parameter.empty:
             value = (
                 f"*{app_param.description or 'No Description'}*\n**Required:** `True`"
             )
@@ -280,7 +287,7 @@ def get_param_repr(param: commands.Parameter) -> str:
     try:
         return param.annotation.__name__
     except AttributeError:
-        return str(param.annotation)
+        return param.annotation.__class__.__str__()
 
 
 def get_command_description(command: TypedHybridCommand, cutoff: bool = True) -> str:

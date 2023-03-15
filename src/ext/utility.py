@@ -11,7 +11,8 @@ from urllib import parse
 import aiohttp
 from bs4 import BeautifulSoup
 from ..command_util import Paginator
-from ..command_types import RTFMMeta
+from ..command_types import RTFMMeta, GuildChannel, VocalGuildChannel
+from ..converters import DiscordObjectAnnotation, DiscordObjectParam
 from discord.app_commands import describe
 
 
@@ -147,6 +148,51 @@ class Utility(SentinelCog, emoji="\N{Input Symbol for Numbers}"):
         )
         embed = ctx.embed(
             title=f"Role Information: `{member}`", description=description
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command()
+    async def id(
+        self, ctx: SentinelContext, obj: DiscordObjectAnnotation = DiscordObjectParam
+    ):
+        # raw emoji input? mpwf
+        desc = f"**ID:** `{obj.id}`\n**Name:** `{obj.name}`\n**Created At:** <t:{round(obj.created_at.timestamp())}:F>"
+        # Specifc data for each object type
+        if isinstance(obj, discord.User):
+            desc += f"\n**Bot:** `{obj.bot}`"
+            desc += f"\n**Avatar:** [Link]({obj.display_avatar})"
+            desc += f"\n**Discriminator:** `{obj.discriminator}`"
+            desc += f"\n**Mention:** {obj.mention}"
+            desc += f"\n**System [Discord Staff]:** `{obj.system}`"
+
+        elif isinstance(obj, discord.TextChannel):
+            desc += f"\n**Topic:** `{obj.topic}`"
+            desc += f"\n**Position:** `{obj.position}`"
+            desc += f"\n**NSFW:** `{obj.nsfw}`"
+            desc += f"\n**Slowmode:** `{obj.slowmode_delay}`"
+            desc += f"\n**Category:** `{obj.category}`"
+
+        elif isinstance(obj, VocalGuildChannel):
+            desc += f"\n**Bitrate:** `{obj.bitrate}`"
+            desc += f"\n**User Limit:** `{obj.user_limit}`"
+            desc += f"\n**NSFW:** `{obj.nsfw}`"
+
+        elif isinstance(obj, discord.CategoryChannel):
+            desc += f"\n**Position:** `{obj.position}`"
+            desc += f"\n**NSFW:** `{obj.nsfw}`"
+
+        elif isinstance(obj, discord.Role):
+            desc += f"\n**Position:** `{obj.position}`"
+            desc += f"\n**Color:** `{obj.color}`"
+            desc += f"\n**Mentionable:** `{obj.mentionable}`"
+            desc += f"\n**Hoisted:** `{obj.hoist}`"
+
+        elif isinstance(obj, discord.Emoji):
+            desc += f"\n**Animated:** `{obj.animated}`"
+            desc += f"\n**Managed:** `{obj.managed}`"
+
+        embed = ctx.embed(
+            title=f"Object Found: `{obj.__class__.__name__}`", description=desc
         )
         await ctx.send(embed=embed)
 

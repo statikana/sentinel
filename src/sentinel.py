@@ -9,6 +9,7 @@ File which includes the major types used in Sentinel:
 
 
 import asyncio
+import io
 import logging
 import time
 from typing import (
@@ -26,6 +27,7 @@ from typing import (
 )
 import discord
 from discord.ext import commands
+from discord.ext import tasks
 from datetime import datetime
 import asyncpg
 
@@ -48,7 +50,7 @@ __version__ = ("1", "0", "0")
 P = ParamSpec("P")
 T = TypeVar("T")
 
-NumT = TypeVar("NumT", type[int], type[float])
+NumT = TypeVar("NumT", int, float)
 
 
 class Sentinel(commands.Bot):
@@ -171,15 +173,15 @@ class SentinelContext(commands.Context):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.bot: Sentinel = self.bot
+        self.guild: discord.Guild = self.guild
 
     def embed(
         self,
         title: Optional[str] = None,
         description: Optional[str] = None,
         color: Optional[discord.Color] = discord.Color.dark_teal(),
+        files: Optional[list[discord.File]] = None,
     ) -> discord.Embed:
-        if not title and not description:
-            title = "undefined"
 
         embed = discord.Embed(
             title=title,
@@ -187,7 +189,6 @@ class SentinelContext(commands.Context):
             color=color,
             timestamp=datetime.utcnow(),
         )
-
         embed.set_footer(
             text=f"Sentinel {'.'.join(__version__)} | {self.author}",
             icon_url=self.author.display_avatar.url,
@@ -283,6 +284,7 @@ class SentinelCog(commands.Cog):
     ) -> None:
         cls.emoji = str(emoji)
         cls.hidden = hidden
+
         super().__init_subclass__()
 
     async def cog_load(self) -> None:
@@ -322,7 +324,7 @@ class SentinelDriver:
             executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe",
         )
 
-    async def get(self, url: str, /, wait: float = 0.5) -> str:
+    async def get(self, url: str, /, wait: float = 0) -> str:
         thread_get = asyncio.to_thread(self.driver.get, url)
         await thread_get
         thread_get.close()
@@ -331,6 +333,19 @@ class SentinelDriver:
             self.driver.execute_script, "return document.documentElement.outerHTML"
         )
         return await thread_return
+
+    async def screenshot(self, url: str, /, wait: float = 0) -> io.BytesIO:
+        thread_get = asyncio.to_thread(self.driver.get, url)
+        await thread_get
+        thread_get.close()
+        await asyncio.sleep(wait)
+        thread_return: Coroutine[Any, Any, bytes] = asyncio.to_thread(
+            self.driver.get_screenshot_as_png
+        )
+        b = await thread_return
+        buf = io.BytesIO(b)
+        buf.seek(0)
+        return buf
 
 
 class SentinelPool(asyncpg.Pool):

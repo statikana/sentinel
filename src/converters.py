@@ -11,10 +11,12 @@ from .sentinel import (
 
 
 import re
-from typing import TypeVar, Coroutine, Callable, Annotated
+from typing import TypeVar, Coroutine, Callable, Annotated, Union
 from difflib import SequenceMatcher
 
+from .command_types import GuildChannel
 from .command_util import fuzz
+from urllib import parse
 
 
 class StringArgParse(commands.Converter):
@@ -54,6 +56,9 @@ class StringArgParse(commands.Converter):
         return StringArgParse(
             lower=self._lower, upper=True, stripped=self._stripped, regex=self.regex
         )
+
+    def __str__(self) -> str:
+        return "string"
 
 
 class UniversalComponentConverter(commands.Converter):
@@ -130,7 +135,7 @@ class UniversalComponentConverter(commands.Converter):
         if self.raise_on_missing:
             raise SentinelErrors.ComponentNotFound(f"Component {arg} not found")
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"Command | Group | Cog"
 
 
@@ -145,7 +150,7 @@ class CommandConverter(commands.Converter):
             ):
                 return command
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"Command"
 
 
@@ -160,7 +165,7 @@ class GroupConverter(commands.Converter):
             ):
                 return command
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"Group"
 
 
@@ -170,7 +175,7 @@ class CogConverter(commands.Converter):
             if fuzz(arg, cog.qualified_name) > 0.95:
                 return cog
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"Cog"
 
 
@@ -200,21 +205,111 @@ class RangeConverter(commands.Converter):
             )
         return value
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return f"Range[{self.type.__name__}]({self.min}, {self.max})"
 
 
-StringParam = Annotated[str, StringArgParse]
-LowerString = commands.param(converter=StringParam.lower)
+class URLConverter(commands.Converter):
+    async def convert(self, ctx: SentinelContext, argument: str) -> parse.SplitResult:
+        url_regex = re.compile(
+            r"(https?:\/\/)?([A-z0-9]+\.)*[A-z0-9]+\.[A-z]{2,5}(\.[A-z]{2,3})?(\/[A-z0-9]+)*([A-z0-9]{2,5})?"
+        )  # gonna kms
+        if (m := url_regex.match(argument)) is not None or (
+            m := url_regex.match(argument + ".com")
+        ) is not None:
+            s = m.string
+            if not s.startswith("https://") and not s.startswith("http://"):
+                s = "https://" + s
+            return parse.urlsplit(s)
+        raise commands.BadArgument(f"{argument} is not a valid URL.")
+
+    def __str__(self) -> str:
+        return "URL"
+
+
+class URLClean(commands.Converter):
+    async def convert(self, ctx: SentinelContext, argument: str) -> str:
+        return parse.quote_plus(argument)
+
+    def __str__(self) -> str:
+        return "URL-Safe String"
+
+
+class ObjectConverter(commands.Converter):
+    async def convert(
+        self,
+        ctx: SentinelContext,
+        argument: int,
+    ) -> "DiscordObject":
+        # .get_x then .fetch_x
+
+        if (user := ctx.bot.get_user(argument)) is not None:
+            return user
+        if (channel := ctx.guild.get_channel(argument)) is not None:
+            return channel
+        if (emoji := ctx.bot.get_emoji(argument)) is not None:
+            return emoji
+        if (guild := ctx.bot.get_guild(argument)) is not None:
+            return guild
+        if (role := ctx.guild.get_role(argument)) is not None:
+            return role
+
+        try:
+            return await ctx.bot.fetch_user(argument)
+        except discord.NotFound:
+            pass
+        try:
+            t = await ctx.guild.fetch_channel(argument)
+            if isinstance(t, discord.Thread):
+                if t.parent is not None:
+                    return t.parent
+            else:
+                return t
+        except discord.NotFound:
+            pass
+        try:
+            return await ctx.bot.fetch_guild(argument)
+        except discord.NotFound:
+            pass
+        raise commands.BadArgument(f"{argument} is not a valid object.")
+
+    def __str__(self) -> str:
+        return "Any Discord Object"
+
+
+StringAnnotation = Annotated[str, StringArgParse]
+LowerStringParam = commands.param(converter=StringAnnotation.lower)
+OptionalLowerStringParam = commands.param(
+    converter=StringAnnotation.lower, default=None
+)
+
+DiscordObject = Union[
+    discord.User, GuildChannel, discord.Emoji, discord.Guild, discord.Role
+]
+DiscordObjectAnnotation = Annotated[DiscordObject, ObjectConverter()]
+DiscordObjectParam = commands.param(converter=DiscordObjectAnnotation)
+OptionalDiscordObjectParam = commands.param(
+    converter=DiscordObjectAnnotation, default=None
+)
+
+URLParam = Annotated[parse.SplitResult, URLConverter()]
+URL = commands.param(converter=URLParam)
+
+URLCleanParam = Annotated[str, URLClean()]
+URLClean = commands.param(converter=URLCleanParam)
 
 
 def Range(
-    type: NumT = int,
-    min: int | float | None = None,
-    max: int | float | None = None,
+    type: type[NumT],
+    min: NumT | None = None,
+    max: NumT | None = None,
     default: NumT | None = None,
 ) -> Annotated[NumT, RangeConverter]:
+    if default is None:
+        return commands.param(
+            converter=RangeConverter(type, min=min, max=max),
+        )
     return commands.param(
         converter=RangeConverter(type, min=min, max=max),
-        default=default or commands.Parameter.empty,
+        default=default,
     )

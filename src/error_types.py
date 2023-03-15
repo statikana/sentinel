@@ -78,3 +78,9 @@ class ComponentNotFound(SentinelError):
     """Raised when a user tries to fetch a component that doesn't exist"""
 
     pass
+
+
+class MissingPermissions(SentinelError):
+    """Raised when a user doesn't have permissions to do something"""
+
+    pass
