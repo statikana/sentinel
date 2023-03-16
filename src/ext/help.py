@@ -287,7 +287,7 @@ def get_param_repr(param: commands.Parameter) -> str:
     try:
         return param.annotation.__name__
     except AttributeError:
-        return param.annotation.__class__.__str__()
+        return param.annotation.__str__()
 
 
 def get_command_description(command: TypedHybridCommand, cutoff: bool = True) -> str:

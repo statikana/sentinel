@@ -18,7 +18,7 @@ class InvalidAmount(SentinelError):
 
 
 class InvalidMember(SentinelError):
-    """Raised when a user tries to give/request coins to/from a bot"""
+    """Raised when a user tries to interact with a bot"""
 
     pass
 

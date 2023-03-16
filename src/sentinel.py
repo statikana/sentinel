@@ -30,6 +30,7 @@ from discord.ext import commands
 from discord.ext import tasks
 from datetime import datetime
 import asyncpg
+import openai
 
 import os
 import env
@@ -63,6 +64,7 @@ class Sentinel(commands.Bot):
         self.usm: UserManager
         self.gdm: GuildManager
         self.tgm: TagsManager
+        openai.api_key = env.OPENAI_API_KEY
         super().__init__(
             command_prefix=_get_prefix,
             help_command=None,

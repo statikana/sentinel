@@ -19,20 +19,22 @@ from ..converters import Range, URLClean, URLCleanParam
 
 
 class MemeDroid(SentinelCog):
+    """Commands for interacting with MemeDroid"""
     def __init__(self, bot: Sentinel):
         self.bot = bot
         self.racial_slurs.start()
         super().__init__(bot, emoji="\N{OK Hand Sign}")
 
     @commands.hybrid_group()
-    async def md(self, ctx: SentinelContext, *, username: Optional[str] = None):
+    async def memedroid(self, ctx: SentinelContext, *, username: Optional[str] = None):
         """MemeDroid commands"""
         if username is not None:
             return await self.user.callback(self, ctx, username=username)
 
-    @md.command()
+    @memedroid.command()
     @describe(username="The username of the user you want to get the information of")
     async def user(self, ctx: SentinelContext, *, username=URLClean):
+        """Gets detailed information about a user"""
         url_base = f"https://www.memedroid.com/user/view/{username}"
         page_content = await self.bot.driver.get(url_base)
 
@@ -47,7 +49,7 @@ class MemeDroid(SentinelCog):
         ranking_selector = "div > div > div.user-profile-score-info-rank > p > span"
         score_selector = "div > div > div.user-profile-score-info-score > p > span"
 
-        follow_selector = "div#user-profile-followers-info-container"  # same selector for followers and following # independedntly
+        follow_selector = "div#user-profile-followers-info-container"
 
         soup = bs4.BeautifulSoup(page_content, "html.parser")
         profile_stats = soup.select_one(profile_stats_selector)
@@ -80,6 +82,7 @@ class MemeDroid(SentinelCog):
         view = UserButtons(ctx, cased_username, soup)
         view.set_embed(embed)
         await ctx.send(embed=embed, view=view)
+
 
     @tasks.loop(hours=1)
     async def racial_slurs(self):

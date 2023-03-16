@@ -1,9 +1,12 @@
 from enum import Enum
 import random
+from typing import Optional
 import discord
 from discord.ext import commands
 from discord.app_commands import describe
 import asyncio
+
+from ..error_types import InvalidMember
 
 from ..command_util import fuzz
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
@@ -188,19 +191,23 @@ class Fun(SentinelCog, emoji="\N{Party Popper}"):
     
     @commands.hybrid_command()
     async def flip(self, ctx: SentinelContext):
+        """Flips a coin for you"""
         embed = ctx.embed(
             title=f"You flipped... `{random.choice(('heads', 'tails'))}`!",
         )
         await ctx.send(embed=embed)
     
     @commands.hybrid_command()
-    async def tictactoe(self, ctx: SentinelContext, other: discord.Member):
-        """Play a game of tic tac toe with another user!"""
-        embed = ctx.embed(
-            title="Accept Tic Tac Toe Challenge?",
-            description=f"{other.mention}, please select an option below to accept or decline this challenge.",
-        )
-        await ctx.send(embed=embed, view=TicTacToeAcceptView(ctx, other))
+    async def tictactoe(self, ctx: SentinelContext, other: Optional[discord.Member]):
+        """Play a game of tic tac toe with another user"""
+        if other and other.bot:
+            raise InvalidMember
+        if other is not None:
+            embed = ctx.embed(
+                title="Accept Tic Tac Toe Challenge?",
+                description=f"{other.mention}, please select an option below to accept or decline this challenge.",
+            )
+            await ctx.send(embed=embed, view=TicTacToeAcceptView(ctx, other))
 
 
 class TicTacToeAcceptView(SentinelView):
@@ -210,7 +217,7 @@ class TicTacToeAcceptView(SentinelView):
 
     async def interaction_check(self, itx: discord.Interaction) -> bool:
         if not (itx.user.id == self.other.id) and (itx.channel is not None) and (itx.channel.id == self.ctx.channel.id):
-            await itx.response.send_message("You cannot accept this challenge.", ephemeral=True)
+            await itx.response.send_message("You cannot interact with this challenge.", ephemeral=True)
             return False
         return True
 
@@ -346,13 +353,6 @@ class TicTacToeGameStatus(Enum):
     IN_PROGRESS = 0
     DRAW = 1
     WIN = 2
-    
-
-
-    
-        
-
-
 
 
 async def setup(bot: Sentinel):

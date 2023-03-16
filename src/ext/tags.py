@@ -14,6 +14,7 @@ import re
 
 
 class Tags(SentinelCog, emoji="\N{Label}"):
+    """Store text snippets for later use"""
     @commands.hybrid_group()
     @commands.guild_only()
     async def tags(

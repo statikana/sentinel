@@ -51,7 +51,7 @@ class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
         page_content = await self.bot.driver.get(search_base, wait=1)
 
         soup = bs4.BeautifulSoup(page_content, "html.parser")
-        selector = "div > div.tile-wrap > div > div.    tile"
+        selector = "div > div.tile-wrap > div > div.tile"
         results = soup.select(selector)
 
         view = WebImagePaginator(ctx, query, tuple(results[:-1]))
@@ -61,7 +61,7 @@ class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
         view.message = message
 
     @web.command()
-    async def ss(self, ctx: SentinelContext, url: URLParam = URL):
+    async def ss(self, ctx: SentinelContext, url = URL):
         """Gets a screenshot of a website"""
         embed = ctx.embed(
             title=f"Getting {url.netloc}...",
