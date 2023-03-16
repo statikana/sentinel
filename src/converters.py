@@ -17,6 +17,7 @@ from difflib import SequenceMatcher
 from .command_types import GuildChannel
 from .command_util import fuzz
 from urllib import parse
+import pyfiglet
 
 
 class StringArgParse(commands.Converter):
@@ -277,6 +278,15 @@ class ObjectConverter(commands.Converter):
         return "Any Discord Object"
 
 
+class FigletFontConverter(commands.Converter):
+    async def convert(self, ctx: SentinelContext, argument: str) -> pyfiglet.Figlet:
+        try:
+            return pyfiglet.Figlet(argument)
+        except pyfiglet.FontNotFound:
+            raise commands.BadArgument(f"{argument} is not a valid font. Please use the autocomplete.")
+        
+
+
 StringAnnotation = Annotated[str, StringArgParse]
 LowerStringParam = commands.param(converter=StringAnnotation.lower)
 OptionalLowerStringParam = commands.param(
@@ -297,6 +307,10 @@ URL = commands.param(converter=URLParam)
 
 URLCleanParam = Annotated[str, URLClean()]
 URLClean = commands.param(converter=URLCleanParam)
+
+FigletFontParam = Annotated[pyfiglet.Figlet, FigletFontConverter()]
+FigletFont = commands.param(converter=FigletFontParam)
+
 
 
 def Range(
