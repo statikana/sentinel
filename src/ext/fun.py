@@ -156,14 +156,13 @@ class Fun(SentinelCog, emoji="\N{Party Popper}"):
         await ctx.send(embed=embed)
     
     @font.autocomplete("font")
-    async def font_autocomplete(self, interaction: discord.Interaction, current: str):
+    async def font_autocomplete(self, interaction: discord.Interaction, argument: str):
         return sorted(
             [
                 discord.app_commands.Choice(name=font, value=font)
                 for font in pyfiglet.FigletFont.getFonts()
-                if fuzz(current, font) > 0.2 or not current
-            ][:25],
-            key=lambda c: c.name, # type: ignore
+                if fuzz(argument, font) > 0.2 or not argument
+            ][:25], key=lambda choice: fuzz(choice.name, argument), reverse=True,
         )
     
     @commands.hybrid_command()

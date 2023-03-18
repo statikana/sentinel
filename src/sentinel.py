@@ -1,12 +1,4 @@
-"""
-File which includes the major types used in Sentinel:
-    - Sentinel
-    - SentinelContext
-    - SentinelTree
-    - SentinelSession
-    - SentinelConnectionPool
-"""
-
+import wavelink
 
 import asyncio
 import io
@@ -20,7 +12,6 @@ from typing import (
     Mapping,
     Optional,
     ParamSpec,
-    Self,
     Type,
     TypeVar,
     Union,
@@ -41,7 +32,7 @@ from selenium.webdriver import Firefox as SeleniumFirefox
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
 from . import error_types as SentinelErrors
-from .db_managers import UserManager, GuildManager, TagsManager
+from .db_managers import UserDataManager, GuildDataManager, TagDataManager, GuildConfigManager, UserConfigManager
 
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
@@ -61,9 +52,9 @@ class Sentinel(commands.Bot):
         self.guild_cache = SentinelCache(timeout=300)
         self.driver: SentinelDriver
 
-        self.usm: UserManager
-        self.gdm: GuildManager
-        self.tgm: TagsManager
+        self.udm: UserDataManager
+        self.gdm: GuildDataManager
+        self.tdm: TagDataManager
         openai.api_key = env.OPENAI_API_KEY
         super().__init__(
             command_prefix=_get_prefix,
@@ -88,9 +79,11 @@ class Sentinel(commands.Bot):
         await self.connect_driver()
         await self.reload_extensions()
 
-        self.usm = UserManager(self.apg)
-        self.gdm = GuildManager(self.apg)
-        self.tgm = TagsManager(self.apg)
+        self.udm = UserDataManager(self.apg)
+        self.gdm = GuildDataManager(self.apg)
+        self.tdm = TagDataManager(self.apg)
+        self.gcm = GuildConfigManager(self.apg)
+        self.ucm = UserConfigManager(self.apg)
 
     async def reload_extensions(
         self, ext_dir: str = ".\\src\\ext"
@@ -205,7 +198,7 @@ class SentinelTree(discord.app_commands.CommandTree):
         super().__init__(client=bot, **kwargs)
 
     async def interaction_check(self, itx: discord.Interaction, /) -> bool:
-        await self.bot.usm.ensure_user(itx.user.id)
+        await self.bot.udm.ensure_user(itx.user.id)
         if itx.type == discord.InteractionType.application_command:
             # TODO: automatically defer?
             pass
@@ -387,8 +380,6 @@ class SentinelCacheEntry:
         self.time = int(
             time.time()
         )  # Ints are much faster to work with and no need for decimals
-
-
 async def _get_prefix(bot: Sentinel, message: discord.Message) -> str:
     if message.guild is None:
         return ">>"

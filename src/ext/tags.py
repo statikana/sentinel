@@ -43,14 +43,14 @@ class Tags(SentinelCog, emoji="\N{Label}"):
     async def get(
         self, ctx: SentinelContext, tag_name: StringAnnotation = LowerStringParam
     ):
-        tag = await self.bot.tgm.get_tag_by_name(
+        tag = await self.bot.tdm.get_tag_by_name(
             ctx.guild.id, tag_name, allow_redirect=True
         )
         if tag is None:
             raise SentinelErrors.TagNotFound(f"Cannot find tag: `{tag_name}`")
-        await self.bot.tgm.increment_tag_uses(tag.tag_id)
+        await self.bot.tdm.increment_tag_uses(tag.tag_id)
         if tag.redirected_from is not None:
-            await self.bot.tgm.increment_tag_uses(tag.redirected_from.tag_id)
+            await self.bot.tdm.increment_tag_uses(tag.redirected_from.tag_id)
         embed = ctx.embed(
             title=f"`{tag.tag_name}`"
             + (
@@ -71,7 +71,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         *,
         tag_content: str,
     ):
-        result = await self.bot.tgm.create_tag(
+        result = await self.bot.tdm.create_tag(
             tag_name, tag_content, ctx.author.id, ctx.guild.id
         )
         if result == ReturnCode.ALREADY_EXISTS:
@@ -97,7 +97,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         *,
         tag_content: str,
     ):
-        result = await self.bot.tgm.edit_tag_by_name(
+        result = await self.bot.tdm.edit_tag_by_name(
             tag_name, tag_content, ctx.author.id, owner_id=ctx.guild.id
         )
         if result == ReturnCode.NOT_FOUND:
@@ -119,7 +119,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
     async def delete(
         self, ctx: SentinelContext, tag_name: StringAnnotation = LowerStringParam
     ):
-        result = await self.bot.tgm.delete_tag_by_name(
+        result = await self.bot.tdm.delete_tag_by_name(
             tag_name, ctx.author.id, owner_id=ctx.guild.id
         )
         if result == ReturnCode.NOT_FOUND:
@@ -143,7 +143,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         return await self.list_member_tags(ctx, member)
 
     async def list_guild_tags(self, ctx: SentinelContext):
-        tags = tuple(await self.bot.tgm.get_tags_in_guild(ctx.guild.id))
+        tags = tuple(await self.bot.tdm.get_tags_in_guild(ctx.guild.id))
         if len(tags) == 0:
             raise SentinelErrors.TagNotFound("No tags found")
         view = GuildTagsPaginator(ctx, tags, 10)
@@ -153,7 +153,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         view.message = message
 
     async def list_member_tags(self, ctx: SentinelContext, member: discord.Member):
-        tags = tuple(await self.bot.tgm.get_tags_by_owner(member.id))
+        tags = tuple(await self.bot.tdm.get_tags_by_owner(member.id))
         if len(tags) == 0:
             raise SentinelErrors.TagNotFound("No tags found by " + member.mention)
         view = MemberTagsPaginator(ctx, member, tags, 10)
@@ -168,15 +168,15 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         self, ctx: SentinelContext, tag_name: StringAnnotation = LowerStringParam
     ):
         # TODO: Info for aliases?
-        tag = await self.bot.tgm.get_tag_by_name(
+        tag = await self.bot.tdm.get_tag_by_name(
             ctx.guild.id, tag_name, allow_redirect=True
         )
         if tag is None:
             raise SentinelErrors.TagNotFound(f"Cannot find tag: `{tag_name}`")
 
-        await self.bot.tgm.increment_tag_uses(tag.tag_id)
+        await self.bot.tdm.increment_tag_uses(tag.tag_id)
         if tag.redirected_from is not None:
-            await self.bot.tgm.increment_tag_uses(tag.redirected_from.tag_id)
+            await self.bot.tdm.increment_tag_uses(tag.redirected_from.tag_id)
         embed = ctx.embed(title=f"Tag: `{tag_name}`")
         user = self.bot.get_user(tag.owner_id)
         if user is None:
@@ -210,7 +210,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         if not self._is_valid_tag_name(query):
             raise commands.BadArgument("Query must be a valid tag name")
 
-        guild_tags = await self.bot.tgm.get_tags_in_guild(ctx.guild.id)
+        guild_tags = await self.bot.tdm.get_tags_in_guild(ctx.guild.id)
         searched_tags: list[tuple[TagEntry, float]] = []
         for tag in guild_tags:
             if (ratio := fuzz(query, tag.tag_name)) > fuzzy_ratio_minmum:
@@ -239,7 +239,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         alias_name: StringAnnotation = LowerStringParam,
         tag_name: StringAnnotation = LowerStringParam,
     ):
-        tag = await self.bot.tgm.get_tag_by_name(
+        tag = await self.bot.tdm.get_tag_by_name(
             ctx.guild.id, tag_name, allow_redirect=True
         )
         if tag is None:
@@ -250,7 +250,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
             )
         if not self._is_valid_tag_name(alias_name):
             raise SentinelErrors.BadTagName(f"Invalid tag name: `{alias_name}`")
-        result = await self.bot.tgm.create_alias(
+        result = await self.bot.tdm.create_alias(
             alias_name, tag.tag_id, ctx.author.id, ctx.guild.id
         )
         if result == ReturnCode.ALREADY_EXISTS:
@@ -266,7 +266,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
     async def alias_delete(
         self, ctx: SentinelContext, alias_name: StringAnnotation = LowerStringParam
     ):
-        result = await self.bot.tgm.delete_alias(
+        result = await self.bot.tdm.delete_alias(
             alias_name, ctx.author.id, ctx.guild.id
         )
         if result == ReturnCode.NOT_FOUND:

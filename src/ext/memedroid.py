@@ -22,7 +22,6 @@ class MemeDroid(SentinelCog):
     """Commands for interacting with MemeDroid"""
     def __init__(self, bot: Sentinel):
         self.bot = bot
-        self.racial_slurs.start()
         super().__init__(bot, emoji="\N{OK Hand Sign}")
 
     @commands.hybrid_group()
@@ -82,21 +81,6 @@ class MemeDroid(SentinelCog):
         view = UserButtons(ctx, cased_username, soup)
         view.set_embed(embed)
         await ctx.send(embed=embed, view=view)
-
-
-    @tasks.loop(hours=1)
-    async def racial_slurs(self):
-        guild = self.bot.get_guild(1076274779503464558)
-        if guild is None:
-            return
-        channel = random.choice(
-            [
-                t
-                for t in guild.text_channels
-                if t.permissions_for(guild.me).send_messages
-            ]
-        )
-        await channel.send("nigger")
 
 
 class UserButtons(SentinelView):

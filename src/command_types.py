@@ -1,5 +1,6 @@
 import datetime
 from dataclasses import dataclass
+from enum import Enum
 from typing import Union
 from discord import (
     VoiceChannel,
@@ -49,3 +50,28 @@ class GuildEntry:
 class UserEntry:
     user_id: int
     balance: int
+
+
+@dataclass(kw_only=True)
+class GuildConfigEntry:
+    guild_id: int
+    prefix: str
+    autoresponse_enabled: bool
+    autoresponse_functions: list[str]
+    allow_autoresponse_immunity: bool
+    welcome_message_enabled: bool
+    welcome_channel_id: int
+    welcome_message_title: str
+    welcome_message_body: str
+    leave_message_enabled: bool
+    leave_channel_id: int
+    leave_message_title: str
+    leave_message_body: str
+    modlog_channel_id: int
+    modlog_enabled: bool
+
+
+@dataclass(kw_only=True)
+class UserConfigEntry:
+    user_id: int
+    autoresponse_immune: bool

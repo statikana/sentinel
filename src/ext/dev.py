@@ -5,10 +5,12 @@ from typing import Optional, Sequence
 
 from ..sentinel import NumT, Sentinel, SentinelCog, SentinelContext
 from ..command_util import Paginator, ParamDefaults
+from .events import Events
 
 
 class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
     @commands.command()
+    @commands.is_owner()
     async def reload(self, ctx: SentinelContext):
         exts, utils = await self.bot.reload_extensions()
         description = [f"**{e}**" for e in exts]
@@ -21,6 +23,7 @@ class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
         logging.info(f"Reloaded {len(exts)} extensions and {len(utils)} utils")
 
     @commands.command()
+    @commands.is_owner()
     async def sync(self, ctx: SentinelContext, guild_id: Optional[int]):
         await self.bot.tree.sync(guild=discord.Object(guild_id) if guild_id else None)
         embed = ctx.embed(
@@ -30,6 +33,7 @@ class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
         await ctx.send(embed=embed)
 
     @commands.group()
+    @commands.is_owner()
     async def blacklist(self, ctx: SentinelContext, user: discord.User | None):
         """Shows the blacklist"""
         if ctx.invoked_subcommand:
@@ -60,9 +64,10 @@ class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
             return await self.add.callback(self, ctx, user)
 
     @blacklist.command()
+    @commands.is_owner()
     async def add(self, ctx: SentinelContext, user: discord.User):
         """Add a user to the blacklist"""
-        await self.bot.usm.ensure_user(user.id)
+        await self.bot.udm.ensure_user(user.id)
         await self.bot.apg.execute("INSERT INTO blacklist VALUES ($1)", user.id)
         embed = ctx.embed(
             title="Successful Blacklist \N{White Heavy Check Mark}",
@@ -71,6 +76,7 @@ class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
         await ctx.send(embed=embed)
 
     @blacklist.command()
+    @commands.is_owner()
     async def remove(self, ctx: SentinelContext, user: discord.User):
         """Remove a user from the blacklist"""
         await self.bot.apg.execute("DELETE FROM blacklist WHERE user_id = $1", user.id)
@@ -82,12 +88,48 @@ class Dev(SentinelCog, emoji="\N{Personal Computer}", hidden=True):
         await ctx.send(embed=embed)
 
     @commands.command()
+    @commands.is_owner()
     async def sql(self, ctx: SentinelContext, option: str, *, command: str):
         if option == "fetch":
             await ctx.send(str(list(await self.bot.apg.fetch(command))))
         else:
             await self.bot.apg.execute(command)
             await ctx.send("Executed: " + command)
+    
+    @commands.command()
+    @commands.is_owner()
+    async def reload_guilds(self, ctx: SentinelContext):
+        guildlen = len(self.bot.guilds)
+        for guild in self.bot.guilds:
+            await self.bot.gdm.ensure_guild(guild.id)
+            await self.bot.gcm.ensure_guild_config(guild.id)
+        embed = ctx.embed(
+            title="Successful Reload \N{White Heavy Check Mark}",
+            description=f"Reloaded `{guildlen}` guilds",
+        )
+        await ctx.send(embed=embed)
+    
+    @commands.command()
+    @commands.is_owner()
+    async def reload_users(self, ctx: SentinelContext):
+        userlen = len(self.bot.users)
+        for user in self.bot.users:
+            await self.bot.udm.ensure_user(user.id) # may take a very long time
+        embed = ctx.embed(
+            title="Successful Reload \N{White Heavy Check Mark}",
+            description=f"Reloaded `{userlen}` users",
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.is_owner()
+    async def manual_function(self, ctx: SentinelContext):
+        await ctx.send("send the func")
+        text: discord.Message = await self.bot.wait_for("message", check=lambda m: m.author == ctx.author)
+        await ctx.send("send the trigger")
+        trigger: discord.Message = await self.bot.wait_for("message", check=lambda m: m.author == ctx.author)
+        await Events(self.bot).process_code(text.content.splitlines(), trigger)
+
 
 
 async def setup(bot: Sentinel):

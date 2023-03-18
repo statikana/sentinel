@@ -10,7 +10,7 @@ from ..sentinel import (
 )
 from ..converters import Range
 from ..command_util import ParamDefaults
-from ..db_managers import UserManager
+from ..db_managers import UserDataManager
 
 
 class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
@@ -42,7 +42,7 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
             embed = ctx.embed(title="Bots don't have coins!", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
-        balance = await self.bot.usm.get_balance(member.id)
+        balance = await self.bot.udm.get_balance(member.id)
         embed = ctx.embed(
             title=f"`{member}`'s Balance", description=f"\N{Coin}{balance:,}"
         )
@@ -66,8 +66,8 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
             embed = ctx.embed(title="Cannot Give To Bots", color=discord.Color.red())
             await ctx.send(embed=embed)
             return
-        giver_bal = await self.bot.usm.get_balance(ctx.author.id)
-        rec_bal = await self.bot.usm.get_balance(member.id)
+        giver_bal = await self.bot.udm.get_balance(ctx.author.id)
+        rec_bal = await self.bot.udm.get_balance(member.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
@@ -88,7 +88,7 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
         if isinstance(ctx.author, discord.User):
             return  # wha
 
-        view = GiveCoinsConfirmation(ctx, self.bot.usm, ctx.author, member, amount)
+        view = GiveCoinsConfirmation(ctx, self.bot.udm, ctx.author, member, amount)
         view.message = await ctx.send(embed=embed, view=view)
 
     @coins.command()
@@ -101,8 +101,8 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
             raise commands.BadArgument("Invalid amount")
         if member.bot:
             raise commands.BadArgument("Cannot request from bots")
-        giver_bal = await self.bot.usm.get_balance(member.id)
-        rec_bal = await self.bot.usm.get_balance(ctx.author.id)
+        giver_bal = await self.bot.udm.get_balance(member.id)
+        rec_bal = await self.bot.udm.get_balance(ctx.author.id)
         if giver_bal < amount:
             embed = ctx.embed(
                 title="Transaction Failed",
@@ -123,15 +123,105 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
         if isinstance(ctx.author, discord.User):
             return
 
-        view = GiveCoinsConfirmation(ctx, self.bot.usm, member, ctx.author, amount)
+        view = GiveCoinsConfirmation(ctx, self.bot.udm, member, ctx.author, amount)
         await ctx.send(content=member.mention, embed=embed, view=view)
+
+    
+    @coins.command()
+    @commands.guild_only()
+    async def hourly(self, ctx: SentinelContext):
+        hourly_coins = 100
+        if isinstance(ctx.author, discord.User):
+            return
+        result = await self.bot.udm.try_hourly(ctx.author.id, hourly_coins)
+        if result:
+            embed = ctx.embed(
+                title="Hourly Coins Claimed",
+                description=f"You have claimed your hourly coins and received \N{Coin}`{hourly_coins:,}`",
+            )
+        else:
+            remaining = await self.bot.udm.get_next_hourly(ctx.author.id)
+            embed = ctx.embed(
+                title="Hourly Coins Already Claimed",
+                description=f"You have already claimed your hourly coins. You can claim them again <t:{int(remaining.timestamp())}:R> at <t:{int(remaining.timestamp())}:F>",
+                color=discord.Color.red(),
+            )
+        await ctx.send(embed=embed)
+        
+
+
+    @coins.command()
+    @commands.guild_only()
+    async def daily(self, ctx: SentinelContext):
+        """Claim your daily coins"""
+        daily_coins = 200
+        if isinstance(ctx.author, discord.User):
+            return
+        result = await self.bot.udm.try_daily(ctx.author.id, daily_coins)
+        if result:
+            embed = ctx.embed(
+                title="Daily Coins Claimed",
+                description=f"You have claimed your daily coins and received \N{Coin}`{daily_coins:,}`",
+            )
+        else:
+            remaining = await self.bot.udm.get_next_daily(ctx.author.id)
+            embed = ctx.embed(
+                title="Daily Coins Already Claimed",
+                description=f"You have already claimed your daily coins. You can claim them again <t:{int(remaining.timestamp())}:R> at <t:{int(remaining.timestamp())}:F>",
+                color=discord.Color.red(),
+            )
+        await ctx.send(embed=embed)
+
+    @coins.command()
+    @commands.guild_only()
+    async def weekly(self, ctx: SentinelContext):
+        """Claim your weekly coins"""
+        weekly_coins = 1000
+        if isinstance(ctx.author, discord.User):
+            return
+        result = await self.bot.udm.try_weekly(ctx.author.id, weekly_coins)
+        if result:
+            embed = ctx.embed(
+                title="Weekly Coins Claimed",
+                description=f"You have claimed your weekly coins and received \N{Coin}`{weekly_coins:,}`",
+            )
+        else:
+            remaining = await self.bot.udm.get_next_weekly(ctx.author.id)
+            embed = ctx.embed(
+                title="Weekly Coins Already Claimed",
+                description=f"You have already claimed your weekly coins. You can claim them again <t:{int(remaining.timestamp())}:R> at <t:{int(remaining.timestamp())}:F>",
+                color=discord.Color.red(),
+            )
+        await ctx.send(embed=embed)
+    
+    @coins.command()
+    @commands.guild_only()
+    async def monthly(self, ctx: SentinelContext):
+        """Claim your monthly coins"""
+        monthly_coins = 5000
+        if isinstance(ctx.author, discord.User):
+            return
+        result = await self.bot.udm.try_monthly(ctx.author.id, monthly_coins)
+        if result:
+            embed = ctx.embed(
+                title="Monthly Coins Claimed",
+                description=f"You have claimed your monthly coins and received \N{Coin}`{monthly_coins:,}`",
+            )
+        else:
+            remaining = await self.bot.udm.get_next_monthly(ctx.author.id)
+            embed = ctx.embed(
+                title="Monthly Coins Already Claimed",
+                description=f"You have already claimed your monthly coins. You can claim them again <t:{int(remaining.timestamp())}:R> at <t:{int(remaining.timestamp())}:F>",
+                color=discord.Color.red(),
+            )
+        await ctx.send(embed=embed)
 
     @commands.command()
     @commands.is_owner()
     async def set_coin_balance(
         self, ctx: SentinelContext, member: discord.Member, amount: int
     ):
-        await self.bot.usm.set_balance(member.id, amount)
+        await self.bot.udm.set_balance(member.id, amount)
         await ctx.send(f"Set `{member}`'s balance to \N{Coin}`{amount:,}`")
 
 
@@ -139,7 +229,7 @@ class GiveCoinsConfirmation(SentinelView):
     def __init__(
         self,
         ctx: SentinelContext,
-        usm: UserManager,
+        usm: UserDataManager,
         giver: discord.Member,
         receiver: discord.Member,
         amount: int,

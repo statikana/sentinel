@@ -7,7 +7,7 @@ import asyncpg
 
 from config import DEFAULT_PREFIX
 
-from .command_types import TagEntry, MetaTagEntry, GuildEntry, UserEntry
+from .command_types import TagEntry, MetaTagEntry, GuildEntry, UserEntry, GuildConfigEntry, UserConfigEntry
 import discord
 
 
@@ -16,7 +16,7 @@ class SentinelDatabase:
         self.apg = apg
 
 
-class UserManager(SentinelDatabase):
+class UserDataManager(SentinelDatabase):
     """Should be used for getting and setting user data (currently only balance)"""
 
     async def ensure_user(self, user_id: int) -> None:
@@ -145,12 +145,157 @@ class UserManager(SentinelDatabase):
             )
         return (True, giver_bal - amount, rec_bal + amount)
 
+    async def add_tokens(self, user_id: int, amount: int) -> int:
+        tokens: int = int(await self.apg.execute(
+            "INSERT INTO users (user_id, tokens) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET tokens = users.tokens + $2 RETURNING tokens",
+            user_id,
+            amount,
+        ))
+        return tokens
 
-class TagsManager(SentinelDatabase):
+    async def get_tokens(self, user_id: int) -> int:
+        tokens: int = await self.apg.fetchval(
+            "SELECT tokens FROM users WHERE user_id = $1",
+            user_id,
+        )
+        return tokens
+
+    async def set_tokens(self, user_id: int, amount: int) -> int:
+        await self.apg.execute(
+            """
+            INSERT INTO users (user_id, tokens) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET tokens = $2
+            """
+        )
+        return amount
+    
+    async def try_hourly(self, user_id: int, success_amount: int) -> bool:
+        await self.ensure_user(user_id)
+        result = await self.apg.fetchval(
+            """
+            SELECT next_hourly FROM users WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if result is not None and datetime.datetime.utcnow() > result:
+            await self.apg.execute(
+                """
+                UPDATE users SET next_hourly = $2, balance = balance + $3 WHERE user_id = $1
+                """,
+                user_id,
+                datetime.datetime.utcnow() + datetime.timedelta(hours=1),
+                success_amount,
+            )
+            return True
+        return False
+    
+    async def get_next_hourly(self, user_id: int) -> datetime.datetime:
+        await self.ensure_user(user_id)
+        return await self.apg.fetchval(
+            """
+            SELECT next_hourly FROM users WHERE user_id = $1
+            """,
+            user_id,
+        ) # type: ignore
+    
+    async def try_daily(self, user_id: int, success_amount: int) -> bool:
+        await self.ensure_user(user_id)
+        result = await self.apg.fetchval(
+            """
+            SELECT next_daily FROM users WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if result is not None and datetime.datetime.utcnow() > result:
+            await self.apg.execute(
+                """
+                UPDATE users SET next_daily = $2, balance = balance + $3 WHERE user_id = $1
+                """,
+                user_id,
+                datetime.datetime.utcnow() + datetime.timedelta(days=1),
+                success_amount,
+            )
+            return True
+        return False
+    
+    async def get_next_daily(self, user_id: int) -> datetime.datetime:
+        await self.ensure_user(user_id)
+        return await self.apg.fetchval(
+            """
+            SELECT next_daily FROM users WHERE user_id = $1
+            """,
+            user_id,
+        ) # type: ignore
+    
+    async def try_weekly(self, user_id: int, success_amount: int) -> bool:
+        await self.ensure_user(user_id)
+        result = await self.apg.fetchval(
+            """
+            SELECT next_weekly FROM users WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if result is not None and datetime.datetime.utcnow() > result:
+            await self.apg.execute(
+                """
+                UPDATE users SET next_weekly = $2, balance = balance + $3 WHERE user_id = $1
+                """,
+                user_id,
+                datetime.datetime.utcnow() + datetime.timedelta(days=7),
+                success_amount,
+            )
+            return True
+        return False
+    
+    async def get_next_weekly(self, user_id: int) -> datetime.datetime:
+        await self.ensure_user(user_id)
+        return await self.apg.fetchval(
+            """
+            SELECT next_weekly FROM users WHERE user_id = $1
+            """,
+            user_id,
+        ) # type: ignore
+
+    async def try_monthly(self, user_id: int, success_amount: int) -> bool:
+        await self.ensure_user(user_id)
+        result = await self.apg.fetchval(
+            """
+            SELECT next_monthly FROM users WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if result is not None and datetime.datetime.utcnow() > result:
+            await self.apg.execute(
+                """
+                UPDATE users SET next_monthly = $2, balance = balance + $3 WHERE user_id = $1
+                """,
+                user_id,
+                datetime.datetime.utcnow() + datetime.timedelta(days=30),
+                success_amount,
+            )
+            return True
+        return False
+    
+    async def get_next_monthly(self, user_id: int) -> datetime.datetime:
+        await self.ensure_user(user_id)
+        return await self.apg.fetchval(
+            """
+            SELECT next_monthly FROM users WHERE user_id = $1
+            """,
+            user_id,
+        ) # type: ignore
+    
+
+
+
+
+
+
+class TagDataManager(SentinelDatabase):
     def __init__(self, apg: asyncpg.Pool):
         super().__init__(apg)
-        self.gdm = GuildManager(apg)
-        self.usm = UserManager(apg)
+        self.gdm = GuildDataManager(apg)
+        self.usm = UserDataManager(apg)
 
     @overload
     async def get_tag_by_name(
@@ -192,7 +337,7 @@ class TagsManager(SentinelDatabase):
             redirected = False
 
         full_result = await self.apg.fetchrow(
-            "SELECT * FROM tags WHERE tag_id = $1", resolved_id
+            "SELECT * FROM tag_data WHERE tag_id = $1", resolved_id
         )
         return self._form_tag(
             updated_meta_result if redirected else meta_result,
@@ -208,13 +353,13 @@ class TagsManager(SentinelDatabase):
         if meta_result is None:
             return None
         full_result = await self.apg.fetchrow(
-            "SELECT * FROM tags WHERE tag_id = $1", tag_id
+            "SELECT * FROM tag_data WHERE tag_id = $1", tag_id
         )
         return self._form_tag(meta_result, full_result)
 
     async def get_tags_by_owner(self, owner_id: int) -> list[TagEntry]:
         tag_data = await self.apg.fetch(
-            "SELECT * FROM tag_meta INNER JOIN tags ON tag_meta.tag_id = tags.tag_id WHERE owner_id = $1",
+            "SELECT * FROM tag_meta INNER JOIN tag_data ON tag_meta.tag_id = tag_data.tag_id WHERE owner_id = $1",
             owner_id,
         )
         tags = []
@@ -251,7 +396,7 @@ class TagsManager(SentinelDatabase):
         if meta_result is None:
             return ReturnCode.ALREADY_EXISTS
         full_result = await self.apg.execute(
-            "INSERT INTO tags (tag_id, tag_content) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO tag_data (tag_id, tag_content) VALUES ($1, $2) ON CONFLICT DO NOTHING",
             tag_id,
             tag_content,
         )
@@ -274,7 +419,7 @@ class TagsManager(SentinelDatabase):
         if owner_id is not None and tag.owner_id != owner_id:
             return ReturnCode.MISSING_PERMISSIONS
         await self.apg.execute(
-            "UPDATE tags SET tag_content = $1 WHERE tag_id = $2",
+            "UPDATE tag_data SET tag_content = $1 WHERE tag_id = $2",
             new_content,
             tag.tag_id,
         )
@@ -289,7 +434,7 @@ class TagsManager(SentinelDatabase):
         if owner_id is not None and tag.owner_id != owner_id:
             return ReturnCode.MISSING_PERMISSIONS
         await self.apg.execute(
-            "UPDATE tags SET tag_content = $1 WHERE tag_id = $2",
+            "UPDATE tag_data SET tag_content = $1 WHERE tag_id = $2",
             new_content,
             tag.tag_id,
         )
@@ -353,7 +498,7 @@ class TagsManager(SentinelDatabase):
 
     async def increment_tag_uses(self, tag_id: int, amount: int = 1) -> None:
         await self.apg.execute(
-            "UPDATE tags SET tag_uses = tag_uses + $2 WHERE tag_id = $1",
+            "UPDATE tag_data SET tag_uses = tag_uses + $2 WHERE tag_id = $1",
             tag_id,
             amount,
         )
@@ -400,56 +545,56 @@ class TagsManager(SentinelDatabase):
         )
 
 
-class GuildManager(SentinelDatabase):
+class GuildDataManager(SentinelDatabase):
     async def ensure_guild(
         self, guild_id: int, prime_status: bool = False, *, safe_insert: bool = True
     ) -> GuildEntry:
-        query = "INSERT INTO guilds(guild_id, prime_status) VALUES ($1, $2)"
+        query = "INSERT INTO guild_data(guild_id, prime_status) VALUES ($1, $2)"
         if safe_insert:
             query += " ON CONFLICT DO NOTHING"
         query += " RETURNING *"
         result = await self.apg.execute(query, guild_id, prime_status)
         if isinstance(result, str):
             result = await self.apg.fetchrow(
-                "SELECT * FROM guilds WHERE guild_id = $1", guild_id
+                "SELECT * FROM guild_data WHERE guild_id = $1", guild_id
             )  # DO NOTHING clause messes with RETURNING
         return self._form_guild(result)
 
     async def get_guild(self, guild_id: int) -> GuildEntry | None:
         result = await self.apg.fetchrow(
-            "SELECT * FROM guilds WHERE guild_id = $1", guild_id
+            "SELECT * FROM guild_data WHERE guild_id = $1", guild_id
         )
         if result is None:
             return None
         return self._form_guild(result)
 
     async def get_all_guilds(self) -> list[GuildEntry]:
-        results = await self.apg.fetch("SELECT * FROM guilds")
+        results = await self.apg.fetch("SELECT * FROM guild_data")
         return [self._form_guild(result) for result in results]
 
     async def get_guild_exists(self, guild_id: int) -> bool:
         return (
             await self.apg.fetchrow(
-                "SELECT * FROM guilds WHERE guild_id = $1", guild_id
+                "SELECT * FROM guild_data WHERE guild_id = $1", guild_id
             )
             is not None
         )
 
     async def get_guilds_by_prime_status(self, prime_status: bool) -> list[GuildEntry]:
         results = await self.apg.fetch(
-            "SELECT * FROM guilds WHERE prime_status = $1", prime_status
+            "SELECT * FROM guild_data WHERE prime_status = $1", prime_status
         )
         return [self._form_guild(result) for result in results]
 
     async def leave_guild(self, guild_id: int) -> bool:
         result = await self.apg.execute(
-            "DELETE FROM guilds WHERE guild_id = $1 RETURNING *", guild_id
+            "DELETE FROM guild_data WHERE guild_id = $1 RETURNING *", guild_id
         )
         return result is not None
 
     async def set_guild_prime_status(self, guild_id: int, prime_status: bool) -> bool:
         result = await self.apg.execute(
-            "UPDATE guilds SET prime_status = $2 WHERE guild_id = $1 RETURNING *",
+            "UPDATE guild_data SET prime_status = $2 WHERE guild_id = $1 RETURNING *",
             guild_id,
             prime_status,
         )
@@ -459,7 +604,7 @@ class GuildManager(SentinelDatabase):
         self, guild_id: int, joined_at: datetime.datetime
     ) -> bool:
         result = await self.apg.execute(
-            "UPDATE guilds SET joined_at = $2 WHERE guild_id = $1 RETURNING *",
+            "UPDATE guild_data SET joined_at = $2 WHERE guild_id = $1 RETURNING *",
             guild_id,
             joined_at,
         )
@@ -467,7 +612,7 @@ class GuildManager(SentinelDatabase):
 
     async def get_prefix(self, guild_id: int) -> str:
         result = await self.apg.fetchrow(
-            "SELECT prefix FROM guilds WHERE guild_id = $1", guild_id
+            "SELECT prefix FROM guild_data WHERE guild_id = $1", guild_id
         )
         return result["prefix"]
 
@@ -477,6 +622,277 @@ class GuildManager(SentinelDatabase):
             prime_status=result["prime_status"],
             joined_at=result["joined_at"],
         )
+
+
+class GuildConfigManager(SentinelDatabase):
+    def _form_guild_config(self, result) -> GuildConfigEntry:
+        return GuildConfigEntry(
+            guild_id=result["guild_id"],
+            prefix=result["prefix"],
+            autoresponse_functions=result["autoresponse_functions"],
+            autoresponse_enabled=result["autoresponse_enabled"],
+            allow_autoresponse_immunity=result["allow_autoresponse_immunity"],
+            welcome_channel_id=result["welcome_channel_id"],
+            welcome_message_title=result["welcome_message_title"],
+            welcome_message_body=result["welcome_message_body"],
+            welcome_message_enabled=result["welcome_message_enabled"],
+            leave_channel_id=result["leave_channel_id"],
+            leave_message_title=result["leave_message_title"],
+            leave_message_body=result["leave_message_body"],
+            leave_message_enabled=result["leave_message_enabled"],
+            modlog_channel_id=result["modlog_channel_id"],
+            modlog_enabled=result["modlog_enabled"],
+        )
+
+    async def get_guild_config(self, guild_id: int) -> GuildConfigEntry | None:
+        result = await self.apg.fetchrow(
+            "SELECT * FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        if result is None:
+            return None
+        return self._form_guild_config(result)
+    
+    async def ensure_guild_config(self, guild_id: int) -> GuildConfigEntry:
+        result = await self.apg.fetchrow(
+            "INSERT INTO guild_configs(guild_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING *",
+            guild_id,
+        )
+        if result is None:
+            result = await self.apg.fetchrow(
+                "SELECT * FROM guild_configs WHERE guild_id = $1", guild_id
+            )
+        return self._form_guild_config(result)
+    
+    async def get_prefix(self, guild_id: int) -> str:
+        result = await self.apg.fetchrow(
+            "SELECT prefix FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["prefix"]
+    
+    async def set_prefix(self, guild_id: int, prefix: str) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET prefix = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            prefix,
+        )
+        return result is not None
+    
+    async def get_autoresponse_functions(self, guild_id: int) -> list[str]:
+        result = await self.apg.fetchrow(
+            "SELECT autoresponse_functions FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["autoresponse_functions"]
+    
+    async def set_autoresponse_functions(self, guild_id: int, functions: list[str]) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET autoresponse_functions = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            functions,
+        )
+        return result is not None
+    
+    async def get_autoresponse_enabled(self, guild_id: int) -> bool:
+        result = await self.apg.fetchrow(
+            "SELECT autoresponse_enabled FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["autoresponse_enabled"]
+    
+    async def set_autoresponse_enabled(self, guild_id: int, enabled: bool) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET autoresponse_enabled = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            enabled,
+        )
+        return result is not None
+    
+    async def get_allow_autoresponse_immunity(self, guild_id: int) -> bool:
+        result = await self.apg.fetchrow(
+            "SELECT allow_autoresponse_immunity FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["allow_autoresponse_immunity"]
+    
+    async def set_allow_autoresponse_immunity(self, guild_id: int, enabled: bool) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET allow_autoresponse_immunity = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            enabled,
+        )
+        return result is not None
+    
+    async def get_welcome_channel_id(self, guild_id: int) -> int:
+        result = await self.apg.fetchrow(
+            "SELECT welcome_channel_id FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["welcome_channel_id"]
+    
+    async def set_welcome_channel_id(self, guild_id: int, channel_id: int) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET welcome_channel_id = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            channel_id,
+        )
+        return result is not None
+    
+    async def get_welcome_message_title(self, guild_id: int) -> str:
+        result = await self.apg.fetchrow(
+            "SELECT welcome_message_title FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["welcome_message_title"]
+    
+    async def set_welcome_message_title(self, guild_id: int, title: str) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET welcome_message_title = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            title,
+        )
+        return result is not None
+    
+    async def get_welcome_message_body(self, guild_id: int) -> str:
+        result = await self.apg.fetchrow(
+            "SELECT welcome_message_body FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["welcome_message_body"]
+    
+    async def set_welcome_message_body(self, guild_id: int, body: str) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET welcome_message_body = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            body,
+        )
+        return result is not None
+    
+    async def get_welcome_message_enabled(self, guild_id: int) -> bool:
+        result = await self.apg.fetchrow(
+            "SELECT welcome_message_enabled FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["welcome_message_enabled"]
+    
+    async def set_welcome_message_enabled(self, guild_id: int, enabled: bool) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET welcome_message_enabled = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            enabled,
+        )
+        return result is not None
+    
+    async def get_leave_channel_id(self, guild_id: int) -> int:
+        result = await self.apg.fetchrow(
+            "SELECT leave_channel_id FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["leave_channel_id"]
+    
+    async def set_leave_channel_id(self, guild_id: int, channel_id: int) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET leave_channel_id = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            channel_id,
+        )
+        return result is not None
+    
+    async def get_leave_message_title(self, guild_id: int) -> str:
+        result = await self.apg.fetchrow(
+            "SELECT leave_message_title FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["leave_message_title"]
+    
+    async def set_leave_message_title(self, guild_id: int, title: str) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET leave_message_title = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            title,
+        )
+        return result is not None
+    
+    async def get_leave_message_body(self, guild_id: int) -> str:
+        result = await self.apg.fetchrow(
+            "SELECT leave_message_body FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["leave_message_body"]
+    
+    async def set_leave_message_body(self, guild_id: int, body: str) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET leave_message_body = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            body,
+        )
+        return result is not None
+    
+    async def get_leave_message_enabled(self, guild_id: int) -> bool:
+        result = await self.apg.fetchrow(
+            "SELECT leave_message_enabled FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["leave_message_enabled"]
+    
+    async def set_leave_message_enabled(self, guild_id: int, enabled: bool) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET leave_message_enabled = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            enabled,
+        )
+        return result is not None
+    
+    async def get_modlog_channel_id(self, guild_id: int) -> int:
+        result = await self.apg.fetchrow(
+            "SELECT modlog_channel_id FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["modlog_channel_id"]
+    
+    async def set_modlog_channel_id(self, guild_id: int, channel_id: int) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET modlog_channel_id = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            channel_id,
+        )
+        return result is not None
+    
+    async def get_modlog_enabled(self, guild_id: int) -> bool:
+        result = await self.apg.fetchrow(
+            "SELECT modlog_enabled FROM guild_configs WHERE guild_id = $1", guild_id
+        )
+        return result["modlog_enabled"]
+    
+    async def set_modlog_enabled(self, guild_id: int, enabled: bool) -> bool:
+        result = await self.apg.execute(
+            "UPDATE guild_configs SET modlog_enabled = $2 WHERE guild_id = $1 RETURNING *",
+            guild_id,
+            enabled,
+        )
+        return result is not None
+    
+
+class UserConfigManager:
+    def __init__(self, apg):
+        self.apg = apg
+    
+    async def get_user_config(self, user_id: int) -> dict:
+        result = await self.apg.fetchrow(
+            "SELECT * FROM user_configs WHERE user_id = $1", user_id
+        )
+        return result
+    
+    async def ensure_user_config(self, user_id: int) -> bool:
+        result = await self.apg.execute(
+            "INSERT INTO user_configs (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
+            user_id,
+        )
+        return result is not None
+    
+    async def get_autoresponse_immune(self, user_id: int) -> bool:
+        result = await self.apg.fetchrow(
+            "SELECT autoresponse_immune FROM user_configs WHERE user_id = $1", user_id
+        )
+        return result["autoresponse_immune"]
+    
+    async def set_autoresponse_immune(self, user_id: int, immune: bool) -> bool:
+        result = await self.apg.execute(
+            "UPDATE user_configs SET autoresponse_immune = $2 WHERE user_id = $1 RETURNING *",
+            user_id,
+            immune,
+        )
+        return result is not None
+
+    
+
 
 
 class ReturnCode(Enum):
