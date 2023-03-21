@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 import time
 
-from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
+from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView, SENTINEL_MESSAGE_CACHE_VALUE, SentinelMessageCacheValue
 from ..command_util import ParamDefaults
 from config import READTHEDOCS_URL, WOLFRAM_API_URL
 from env import WOLFRAM_APPID
@@ -197,6 +197,26 @@ class Utility(SentinelCog, emoji="\N{Input Symbol for Numbers}"):
         await ctx.send(embed=embed)
 
 
+    @commands.hybrid_command()
+    async def snipe(self, ctx: SentinelContext):
+        """Gets the most recent edited and deleted messages in a channel"""
+        items = self.bot.deleted_message_cache[(ctx.guild.id, ctx.channel.id)]
+        if not items:
+            embed = ctx.embed(
+                title="No Snipes Found",
+                description="There are no snipes for this channel. Snipes are only recorded while the bot is online",
+            )
+            return await ctx.send(embed=embed)
+        
+        items_list = list(items)
+        items_list.sort(key=lambda item: item[4], reverse=True)
+
+        view = SnipePaginator(ctx, tuple(items_list))
+        await view.update()
+        embed = await view.embed(view.displayed_values)
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
+
 class AvatarGuildView(SentinelView):
     def __init__(self, ctx: SentinelContext, member: discord.Member):
         super().__init__(ctx)
@@ -257,6 +277,47 @@ class RTFMPaginator(Paginator):
         )
         embed.url = self.search_url
         return embed
+
+
+class SnipePaginator(Paginator):
+    def __init__(self, ctx: SentinelContext, values: tuple[SENTINEL_MESSAGE_CACHE_VALUE]):
+        super().__init__(ctx, values, 1)
+
+    async def embed(self, value_range: tuple[SENTINEL_MESSAGE_CACHE_VALUE]) -> discord.Embed:
+        if not value_range:
+            return self.ctx.embed(
+                title="No Snipes Found",
+                description="There are no snipes for this channel. Snipes are only recorded while the bot is online",
+            )
+        value = value_range[0]
+
+        full = SentinelMessageCacheValue(*value)
+        author = self.ctx.guild.get_member(full.author_id)
+        
+        embed = self.ctx.embed(
+            title=f"Snipe - `{self.current_page + 1}/{self.max_page + 1}`",
+        )
+        embed.description = full.content
+        embed.add_field(
+            name="Author",
+            value=f"{author.mention} [`{author.id}`]" if author else f"User `{full.author_id}`",
+        )
+        embed.add_field(
+            name="TimeStamp",
+            value=f"<t:{int(full.timestamp)}:F>",
+        )
+        if full.attachment_urls:
+            embed.add_field(
+                name="Attachments",
+                value="\n".join(f"[Attachment #{c+1}]({url})" for c, url in enumerate(full.attachment_urls)),
+            )
+            for a in full.attachment_urls:
+                if a.endswith(".png") or a.endswith(".jpg") or a.endswith(".jpeg"):
+                    embed.set_image(url=a)
+
+        
+        return embed
+            
 
 
 async def setup(bot: Sentinel):

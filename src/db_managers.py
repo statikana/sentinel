@@ -871,6 +871,8 @@ class UserConfigManager:
         return result
     
     async def ensure_user_config(self, user_id: int) -> bool:
+        await UserDataManager(self.apg).ensure_user(user_id)
+
         result = await self.apg.execute(
             "INSERT INTO user_configs (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
             user_id,
@@ -878,10 +880,10 @@ class UserConfigManager:
         return result is not None
     
     async def get_autoresponse_immune(self, user_id: int) -> bool:
-        result = await self.apg.fetchrow(
+        result = await self.apg.fetchval(
             "SELECT autoresponse_immune FROM user_configs WHERE user_id = $1", user_id
         )
-        return result["autoresponse_immune"]
+        return result
     
     async def set_autoresponse_immune(self, user_id: int, immune: bool) -> bool:
         result = await self.apg.execute(

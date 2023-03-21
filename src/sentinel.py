@@ -1,4 +1,4 @@
-import wavelink
+from dataclasses import dataclass
 
 import asyncio
 import io
@@ -9,12 +9,15 @@ from typing import (
     Coroutine,
     Generator,
     Generic,
+    Iterator,
     Mapping,
     Optional,
     ParamSpec,
     Type,
+    TypeGuard,
     TypeVar,
     Union,
+    overload,
 )
 import discord
 from discord.ext import commands
@@ -30,6 +33,7 @@ import importlib
 import aiohttp
 from selenium.webdriver import Firefox as SeleniumFirefox
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 
 from . import error_types as SentinelErrors
 from .db_managers import UserDataManager, GuildDataManager, TagDataManager, GuildConfigManager, UserConfigManager
@@ -49,13 +53,17 @@ class Sentinel(commands.Bot):
     def __init__(self):
         self.session: SentinelAIOSession
         self.apg: asyncpg.Pool
-        self.guild_cache = SentinelCache(timeout=300)
         self.driver: SentinelDriver
 
         self.udm: UserDataManager
         self.gdm: GuildDataManager
         self.tdm: TagDataManager
+
+        self.deleted_message_cache = SentinelMessageCache()
+
         openai.api_key = env.OPENAI_API_KEY
+
+
         super().__init__(
             command_prefix=_get_prefix,
             help_command=None,
@@ -238,7 +246,7 @@ class SentinelView(discord.ui.View):
         await itx.response.edit_message(view=self)
 
     async def interaction_check(self, itx: discord.Interaction) -> bool:
-        return all(
+        if not all(
             {
                 await super().interaction_check(itx),
                 self.ctx.author == itx.user or self.any_responder,
@@ -246,7 +254,13 @@ class SentinelView(discord.ui.View):
                 self.ctx.guild == itx.guild or self.any_guild,
                 not itx.user.bot,
             }
-        )
+        ):
+            await itx.response.send_message(
+                "You do not have permission to use this screen.",
+                ephemeral=True,
+            )
+            return False
+        return True
 
     async def _disable_on_timeout(self) -> None:
         for child in self.children:
@@ -317,7 +331,10 @@ class SentinelDriver:
         self.driver = SeleniumFirefox(
             options=options,
             executable_path="C:\\Program Files\\Mozilla Firefox\\geckodriver.exe",
+            firefox_profile=FirefoxProfile(),
         )
+        profile: FirefoxProfile = self.driver.firefox_profile  # type: ignore
+        profile.add_extension("services/modify_headers_extension.xpi")
 
     async def get(self, url: str, /, wait: float = 0) -> str:
         thread_get = asyncio.to_thread(self.driver.get, url)
@@ -342,44 +359,78 @@ class SentinelDriver:
         buf.seek(0)
         return buf
 
+SENTINEL_MESSAGE_CACHE_KEY = tuple[int, int]
+SENTINEL_MESSAGE_CACHE_VALUE = tuple[int, int, str, frozenset[str], int]
+SENTINEL_MESSAGE_CACHE = dict[SENTINEL_MESSAGE_CACHE_KEY, set[SENTINEL_MESSAGE_CACHE_VALUE]]
 
-class SentinelPool(asyncpg.Pool):
-    def __init__(self, bot: Sentinel, *connect_args, **kwargs):
-        self.bot = bot
-        super().__init__(*connect_args, **kwargs)
+class SentinelMessageCache(SENTINEL_MESSAGE_CACHE):
+    def __init__(self, data: SENTINEL_MESSAGE_CACHE = dict(), *, limit: int = 100):
+        self.limit = limit
+        super().__init__(data)
 
-    async def fetch(self, query, *args, timeout=None, use_cache: bool = False):
-        if use_cache:
-            if (cached := self.bot.guild_cache[query]) is not None:
-                return cached
+    def __iter__(self) -> Iterator[SENTINEL_MESSAGE_CACHE_KEY]:
+        return super().__iter__()
 
-
-class SentinelCache(dict[Any, "SentinelCacheEntry"], Generic[_KT, _VT]):
-    def __init__(self, *, timeout: int):
-        super().__init__()
-        self.timeout = timeout
-
-    def __setitem__(self, __key: _KT, __value: _VT) -> None:
-        return super().__setitem__(__key, SentinelCacheEntry(__value, self.timeout))
-
-    def __getitem__(self, __key: _KT) -> Optional[_VT]:
-        cache_entry: Optional[SentinelCacheEntry] = super().get(__key, None)
-        if cache_entry is None:
-            return None
-
-        if cache_entry.time + self.timeout <= time.time():
-            super().__delitem__(__key)
-            return None
-
-        return cache_entry.value
+    def add(self, __key: SENTINEL_MESSAGE_CACHE_KEY, __value: SENTINEL_MESSAGE_CACHE_VALUE) -> None:
+        if len(self[__key]) >= self.limit:
+            self[__key].remove(self._get_min(self[__key]))
+        self[__key].add(__value)
 
 
-class SentinelCacheEntry:
-    def __init__(self, value: Any, timeout: int):
-        self.value = value
-        self.time = int(
-            time.time()
-        )  # Ints are much faster to work with and no need for decimals
+    def __getitem__(self, __key: Union[SENTINEL_MESSAGE_CACHE_KEY, "SentinelMessageCacheKey"]) -> set[SENTINEL_MESSAGE_CACHE_VALUE]:
+        if isinstance(__key, SentinelMessageCacheKey):
+            __key = __key.dismantle()
+        try:
+            return super().__getitem__(__key)
+        except KeyError:
+            default = set()
+            self[__key] = default
+            return default
+
+    def _dismantle_set(self, __value: set["SentinelMessageCacheValue"]) -> set[SENTINEL_MESSAGE_CACHE_VALUE]:
+        return set(map(lambda x: x.dismantle(), __value))
+    
+    def _get_min(self, __value: set[SENTINEL_MESSAGE_CACHE_VALUE]) -> SENTINEL_MESSAGE_CACHE_VALUE:
+        return min(__value, key=lambda x: x[4])
+    
+
+@dataclass
+class SentinelMessageCacheKey:
+    guild_id: int
+    channel_id: int
+
+    def dismantle(self) -> SENTINEL_MESSAGE_CACHE_KEY:
+        return self.guild_id, self.channel_id
+
+
+@dataclass
+class SentinelMessageCacheValue:
+    message_id: int
+    author_id: int
+    content: str
+    attachment_urls: frozenset[str]
+    timestamp: int
+
+    def dismantle(self) -> SENTINEL_MESSAGE_CACHE_VALUE:
+        return self.message_id, self.author_id, self.content, self.attachment_urls, self.timestamp
+    
+    def __init__(
+        self,
+        message_id: int,
+        author_id: int,
+        content: str,
+        attachment_urls: set[str] | frozenset[str],
+        timestamp: int,
+    ):
+        self.message_id = message_id
+        self.author_id = author_id
+        self.content = content
+        if isinstance(attachment_urls, set):
+            self.attachment_urls = frozenset(attachment_urls)
+        else:
+            self.attachment_urls = attachment_urls
+        self.timestamp = timestamp
+
 async def _get_prefix(bot: Sentinel, message: discord.Message) -> str:
     if message.guild is None:
         return ">>"

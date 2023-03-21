@@ -9,10 +9,10 @@ from typing import Optional
 
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
 from ..command_util import Paginator, lim
-from ..converters import URL, URLParam
+from ..converters import URL, URLParam, Range
 from urllib import parse
 import bs4
-
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 
 class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
     """Commands for navigating the great interwebs"""
@@ -30,6 +30,10 @@ class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
     async def search(self, ctx: SentinelContext, *, query: str):
         """Searches duckduckgo.com for a query and returns a list of results"""
         parsed = parse.quote_plus(query)
+        if parsed.startswith("nsfw:"):
+            parsed = parsed.lstrip("nsfw:") + "+!safeoff"
+        else:
+            parsed = parsed + "+!safeon"
         search_base = f"https://duckduckgo.com/?q={parsed}&atb=v361-3&ia=web"
         page_content = await self.bot.driver.get(search_base)
 
@@ -37,7 +41,7 @@ class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
         selector = "div#links.results.js-results > div.nrn-react-div > article"
         results = soup.select(selector)
 
-        view = WebGetPaginator(ctx, query, tuple(results))
+        view = WebGetPaginator(ctx, parsed, tuple(results))
         await view.update()
         embed = await view.embed(view.displayed_values)
         message = await ctx.send(embed=embed, view=view)
@@ -48,7 +52,7 @@ class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
         """Searches duckduckgo.com for a query and returns a list of images"""
         parsed = parse.quote_plus(query)
         search_base = f"https://duckduckgo.com/?t=ffab&q={parsed}&iar=images&iax=images&ia=images&kp=-2"
-        page_content = await self.bot.driver.get(search_base, wait=1)
+        page_content = await self.bot.driver.get(search_base, wait=1.5)
 
         soup = bs4.BeautifulSoup(page_content, "html.parser")
         selector = "div > div.tile-wrap > div > div.tile"
@@ -61,14 +65,14 @@ class Web(SentinelCog, emoji="\N{Globe with Meridians}"):
         view.message = message
 
     @web.command()
-    async def ss(self, ctx: SentinelContext, url = URL):
+    async def ss(self, ctx: SentinelContext, url = URL, wait = Range(float, 0, 5, default=1)):
         """Gets a screenshot of a website"""
         embed = ctx.embed(
             title=f"Getting {url.netloc}...",
             description="Depending on the content size and server load, this may take a while",
         )
         message = await ctx.send(embed=embed)
-
+        await asyncio.sleep(wait)
         content = await self.bot.driver.screenshot(url.geturl())
         embed = ctx.embed(title=url.netloc)
         embed.url = url.geturl()
@@ -128,6 +132,8 @@ class WebImagePaginator(Paginator):
 
     async def embed(self, displayed_values: tuple[bs4.element.Tag]) -> discord.Embed:
         # lazy loading
+        if len(displayed_values) == 0:
+            return self.ctx.embed(title="No results found")
         val = displayed_values[0]
 
         image_title = val.select_one("a > span")

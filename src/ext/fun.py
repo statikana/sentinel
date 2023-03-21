@@ -1,6 +1,8 @@
 from enum import Enum
 import random
 from typing import Optional
+import aiofiles
+import bs4
 import discord
 from discord.ext import commands
 from discord.app_commands import describe
@@ -195,7 +197,10 @@ class Fun(SentinelCog, emoji="\N{Party Popper}"):
             title=f"You flipped... `{random.choice(('heads', 'tails'))}`!",
         )
         await ctx.send(embed=embed)
+
     
+    
+        
     @commands.hybrid_command()
     async def tictactoe(self, ctx: SentinelContext, other: Optional[discord.Member]):
         """Play a game of tic tac toe with another user"""
@@ -207,6 +212,30 @@ class Fun(SentinelCog, emoji="\N{Party Popper}"):
                 description=f"{other.mention}, please select an option below to accept or decline this challenge.",
             )
             await ctx.send(embed=embed, view=TicTacToeAcceptView(ctx, other))
+        
+        else:
+            view = TicTacToeGlobalView(ctx)
+            embed = ctx.embed(
+                title=f"Join Tic Tac Toe against `{ctx.author}`",
+            )
+            await ctx.send(embed=embed, view=view)
+    
+
+class TicTacToeGlobalView(SentinelView):
+    def __init__(self, ctx: SentinelContext):
+        super().__init__(ctx, timeout=60)
+        self.other: discord.Member | discord.User
+
+    async def interaction_check(self, itx: discord.Interaction) -> bool:
+        if itx.user.id == self.ctx.author.id:
+            await itx.response.send_message("You cannot interact with this challenge.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Join", style=discord.ButtonStyle.primary)
+    async def join(self, itx: discord.Interaction, button: discord.ui.Button):
+        self.other = itx.user
+        await itx.response.edit_message(view=TicTacToeGameView(self.ctx, self.other)) # type: ignore
 
 
 class TicTacToeAcceptView(SentinelView):

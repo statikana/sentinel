@@ -13,11 +13,11 @@ from config import RESERVED_TAG_NAMES, TAG_NAME_REGEX
 import re
 
 
-class Tags(SentinelCog, emoji="\N{Label}"):
+class Tag(SentinelCog, emoji="\N{Label}"):
     """Store text snippets for later use"""
     @commands.hybrid_group()
     @commands.guild_only()
-    async def tags(
+    async def tag(
         self,
         ctx: SentinelContext,
         *,
@@ -38,7 +38,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         except (commands.BadArgument, commands.UserNotFound):
             return await self.get.callback(self, ctx, tag_name)
 
-    @tags.command()
+    @tag.command()
     @commands.guild_only()
     async def get(
         self, ctx: SentinelContext, tag_name: StringAnnotation = LowerStringParam
@@ -62,59 +62,38 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         )
         await ctx.send(embed=embed)
 
-    @tags.command()
+    @tag.command()
     @commands.guild_only()
     async def new(
         self,
         ctx: SentinelContext,
-        tag_name: StringAnnotation = LowerStringParam,
         *,
-        tag_content: str,
+        tag_name: StringAnnotation = LowerStringParam
     ):
-        result = await self.bot.tdm.create_tag(
-            tag_name, tag_content, ctx.author.id, ctx.guild.id
-        )
-        if result == ReturnCode.ALREADY_EXISTS:
-            raise SentinelErrors.TagNameExists(f"Tag: `{tag_name}` already exists")
-        if len(tag_content) >= 2000:
-            raise commands.BadArgument("Tag content must be less than 2000 characters")
-        if not self._is_valid_tag_name(tag_name):
-            raise SentinelErrors.BadTagName(
-                f"Tag name: `{tag_name}` is not valid (alphanumberic and underscores only)"
-            )
-        embed = ctx.embed(
-            title=f"Tag `{tag_name}` Created",
-            description=tag_content,
-        )
-        await ctx.send(embed=embed)
+        if ctx.interaction is None:
+            raise commands.BadArgument("This command can only be used in slash commands")
+        modal = AddTagModal(ctx, tag_name)
+        await ctx.interaction.response.send_modal(modal)
 
-    @tags.command()
+    @tag.command()
     @commands.guild_only()
     async def edit(
         self,
         ctx: SentinelContext,
-        tag_name: StringAnnotation = LowerStringParam,
         *,
-        tag_content: str,
+        tag_name: StringAnnotation = LowerStringParam,
     ):
-        result = await self.bot.tdm.edit_tag_by_name(
-            tag_name, tag_content, ctx.author.id, owner_id=ctx.guild.id
+        if ctx.interaction is None:
+            raise commands.BadArgument("This command can only be used in slash commands")
+        tag = await self.bot.tdm.get_tag_by_name(
+            ctx.guild.id, tag_name, allow_redirect=True
         )
-        if result == ReturnCode.NOT_FOUND:
+        if tag is None:
             raise SentinelErrors.TagNotFound(f"Cannot find tag: `{tag_name}`")
-        if result == ReturnCode.MISSING_PERMISSIONS:
-            raise SentinelErrors.MissingPermissions(
-                f"You do not have permission to edit tag: `{tag_name}`"
-            )
-        if len(tag_content) >= 2000:
-            raise commands.BadArgument("Tag content must be less than 2000 characters")
-        embed = ctx.embed(
-            title=f"Tag `{tag_name}` Edited",
-            description=tag_content,
-        )
-        await ctx.send(embed=embed)
+        modal = EditTagModal(ctx, tag, tag.tag_content)
+        await ctx.interaction.response.send_modal(modal)
 
-    @tags.command()
+    @tag.command()
     @commands.guild_only()
     async def delete(
         self, ctx: SentinelContext, tag_name: StringAnnotation = LowerStringParam
@@ -133,7 +112,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         )
         await ctx.send(embed=embed)
 
-    @tags.command(name="list")
+    @tag.command(name="list")
     @commands.guild_only()
     async def list_(
         self, ctx: SentinelContext, member: Optional[discord.Member] = None
@@ -162,7 +141,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         message = await ctx.send(embed=embed, view=view)
         view.message = message
 
-    @tags.command()
+    @tag.command()
     @commands.guild_only()
     async def info(
         self, ctx: SentinelContext, tag_name: StringAnnotation = LowerStringParam
@@ -197,7 +176,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
             )
         await ctx.send(embed=embed)
 
-    @tags.command()
+    @tag.command()
     @commands.guild_only()
     async def search(
         self,
@@ -226,7 +205,7 @@ class Tags(SentinelCog, emoji="\N{Label}"):
         message = await ctx.send(embed=embed, view=view)
         view.message = message
 
-    @tags.group()
+    @tag.group()
     @commands.guild_only()
     async def alias(self, ctx: SentinelContext):
         pass
@@ -345,7 +324,71 @@ class SearchTagsPaginator(Paginator):
             description=desc,
         )
         return embed
+    
+
+class AddTagModal(discord.ui.Modal):
+    def __init__(self, ctx: SentinelContext, name: str):
+        super().__init__(title="New Tag", timeout=None)
+        self.ctx = ctx
+        self.name = name
+
+    content = discord.ui.TextInput(
+        label="Tag Content",
+        placeholder="Enter the content of the tag",
+        style=discord.TextStyle.long,
+        max_length=2000,
+    )
+
+    async def on_submit(self, itx: discord.Interaction, /) -> None:
+        result = await self.ctx.bot.tdm.create_tag(
+            self.name, self.content.value, self.ctx.author.id, self.ctx.guild.id
+        )
+        if result == ReturnCode.ALREADY_EXISTS:
+            raise SentinelErrors.TagNameExists(f"Tag: `{self.name}` already exists")
+        if not Tag(self.ctx.bot)._is_valid_tag_name(self.name):
+            raise SentinelErrors.BadTagName(
+                f"Tag name: `{self.name}` is not valid (alphanumberic and underscores only)"
+            )
+        embed = self.ctx.embed(
+            title=f"Tag `{self.name}` Created",
+            description=self.content.value,
+        )
+        await itx.response.send_message(embed=embed)
+
+
+class EditTagModal(discord.ui.Modal):
+    def __init__(self, ctx: SentinelContext, tag: TagEntry, current_content: str):
+        super().__init__(title=f"Edit `{tag.tag_name}'", timeout=None)
+        self.ctx = ctx
+        self.tag = tag
+
+        content = discord.ui.TextInput(
+            label="Tag Content",
+            placeholder="Enter the content of the tag",
+            style=discord.TextStyle.long,
+            max_length=2000,
+            default=current_content
+        )
+        
+        EditTagModal.content = content
+
+    async def on_submit(self, itx: discord.Interaction, /) -> None:
+        result = await self.ctx.bot.tdm.edit_tag_by_id(
+            self.tag.tag_id, self.content.value, self.ctx.author.id
+        )
+        if result == ReturnCode.NOT_FOUND:
+            raise SentinelErrors.TagNotFound(f"Tag: `{self.tag.tag_name}` not found")
+        if result == ReturnCode.MISSING_PERMISSIONS:
+            raise SentinelErrors.MissingPermissions(
+                f"You do not have permission to edit tag: `{self.tag.tag_name}`"
+            )
+        embed = self.ctx.embed(
+            title=f"Tag `{self.tag.tag_name}` Edited",
+            description=self.content.value,
+        )
+        await itx.response.send_message(embed=embed)
+
 
 
 async def setup(bot: Sentinel):
-    await bot.add_cog(Tags(bot))
+    await bot.add_cog(Tag(bot))

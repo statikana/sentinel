@@ -1,6 +1,6 @@
 from difflib import SequenceMatcher
 import inspect
-from typing import Annotated, Callable, Coroutine, Generic, TypeVar
+from typing import Annotated, Any, Callable, Coroutine, Generic, TypeVar
 import typing
 
 from .sentinel import SentinelContext, SentinelView, NumT
@@ -157,3 +157,11 @@ def lim(string: str, length: int, *, suffix: str = "...") -> str:
     if len(string) > length:
         return string[: length - len(suffix)] + suffix
     return string
+
+commands.is_owner()(lambda ctx: ctx.author.id in ctx.bot.devs)
+
+
+def dev(other: Any):
+    async def predicate(ctx: commands.Context) -> bool:
+        return await ctx.bot.is_owner(ctx.author) or await other.predicate(ctx)
+    return commands.check(predicate)
