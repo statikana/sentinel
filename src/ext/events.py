@@ -24,6 +24,7 @@ class Events(SentinelCog, emoji="\N{ELECTRIC LIGHT BULB}", hidden=True):
             return
         guild_opt = await self.bot.gcm.get_autoresponse_enabled(message.guild.id)
         if guild_opt:
+            discord.Interaction.message
             await AutoresponseManager(self.bot).process_autoresponse_functions(message)
         
 

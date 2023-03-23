@@ -9,7 +9,7 @@ from config import READTHEDOCS_URL, WOLFRAM_API_URL
 from env import WOLFRAM_APPID
 from urllib import parse
 import aiohttp
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from ..command_util import Paginator
 from ..command_types import RTFMMeta, GuildChannel, VocalGuildChannel
 from ..converters import DiscordObjectAnnotation, DiscordObjectParam
@@ -317,6 +317,8 @@ class SnipePaginator(Paginator):
 
         
         return embed
+
+
             
 
 

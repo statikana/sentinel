@@ -13,7 +13,7 @@ from ..error_types import InvalidMember
 from ..command_util import fuzz
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
 
-from ..converters import FigletFont, FigletFontParam, Range
+from ..converters import FigletFont, FigletFontParam, Range, MemberAnnotation, MemberOrAuthorParam
 import pyfiglet
 
 
@@ -197,9 +197,30 @@ class Fun(SentinelCog, emoji="\N{Party Popper}"):
             title=f"You flipped... `{random.choice(('heads', 'tails'))}`!",
         )
         await ctx.send(embed=embed)
+    
+    @commands.hybrid_group()
+    async def rate(self, ctx: SentinelContext):
+        """Rates something!"""
+        pass
 
-    
-    
+    @rate.command()
+    async def pp(self, ctx: SentinelContext, member: MemberAnnotation = MemberOrAuthorParam):
+        """Rates your peepee size"""
+        val = round(member.id % 100 / 10) or 1
+        if val <= 3:
+            comment = "Sir, are you sure there's anything here?"
+        elif val <= 6:
+            comment = "Not bad, not bad at all"
+        elif val <= 8:
+            comment = "Impressive!"
+        else:
+            comment = "Good lord, that's... that's a big pp"
+        embed = ctx.embed(
+            title=f"`{member}`'s pp",
+            description=f"**`8{'=' * val * 2}D`**\n*{comment}*",
+        )
+        await ctx.send(embed=embed)
+
         
     @commands.hybrid_command()
     async def tictactoe(self, ctx: SentinelContext, other: Optional[discord.Member]):

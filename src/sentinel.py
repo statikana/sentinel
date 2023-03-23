@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from redis import asyncio as aioredis
 
 import asyncio
 import io
+import json
 import logging
-import time
 from typing import (
     Any,
     Coroutine,
@@ -22,7 +23,7 @@ from typing import (
 import discord
 from discord.ext import commands
 from discord.ext import tasks
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncpg
 import openai
 
@@ -60,6 +61,15 @@ class Sentinel(commands.Bot):
         self.tdm: TagDataManager
 
         self.deleted_message_cache = SentinelMessageCache()
+
+        # get_pipe: Callable[[], StableDiffusionPipeline] = lambda: StableDiffusionPipeline.from_pretrained(
+        #     "runwayml/stable-diffusion-v1-5",
+        #     safety_checker=None
+        # ) # type: ignore
+        # self.pipe = get_pipe()
+        # self.pipe.config
+        # self.pipe = self.pipe.to(torch.device("cpu"))
+        # one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, ort, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone
 
         openai.api_key = env.OPENAI_API_KEY
 
@@ -132,6 +142,7 @@ class Sentinel(commands.Bot):
 
     async def connect_session(self):
         self.session = SentinelAIOSession()
+        await self.session._build_cache()
 
     async def on_message(self, message: discord.Message, /) -> None:
         if message.author.id in await self.apg.fetch("SELECT user_id FROM blacklist"):
@@ -321,6 +332,37 @@ class SentinelAIOSession(aiohttp.ClientSession):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0"
             },
         )
+        self.cache: aioredis.Redis
+    
+    async def _build_cache(self):
+        self.cache = await aioredis.from_url("redis://localhost", decode_responses=True)
+    
+    async def get(self, url: str, /, **kwargs) -> str:
+        get_cache = kwargs.pop("get_cache", True)
+        set_cache = kwargs.pop("set_cache", True)
+
+        if get_cache:
+            cached = await self.cache.get(url)
+            if cached is not None and set_cache:
+                return await self.get(url, get_cache=False, set_cache=True, **kwargs)
+            
+        response = await (await super().get(url, **kwargs)).read()
+
+        if set_cache:
+            await self.cache.set(url, response)
+            self.cache.expire(url, int(datetime.now().timestamp() + 60*60))
+        
+        return response.decode()
+    
+    async def getjson(self, url: str, /, **kwargs) -> dict[str, Any]:
+            
+        response = await self.get(url, **kwargs)
+        js:dict[str, Any] = json.loads(response)
+
+        for key in kwargs.pop("route", []):
+            js = js[key]
+
+        return js
 
 
 class SentinelDriver:

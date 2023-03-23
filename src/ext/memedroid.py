@@ -15,7 +15,7 @@ from selenium.webdriver.common.by import By
 from ..command_util import Paginator
 from ..sentinel import Sentinel, SentinelCog, SentinelContext, SentinelView
 
-from ..converters import Range, URLClean, URLCleanParam
+from ..converters import Range, URLCleanParam, URLCleanAnnotation
 
 
 class MemeDroid(SentinelCog):
@@ -32,7 +32,7 @@ class MemeDroid(SentinelCog):
 
     @memedroid.command()
     @describe(username="The username of the user you want to get the information of")
-    async def user(self, ctx: SentinelContext, *, username=URLClean):
+    async def user(self, ctx: SentinelContext, *, username=URLCleanParam):
         """Gets detailed information about a user"""
         url_base = f"https://www.memedroid.com/user/view/{username}"
         page_content = await self.bot.driver.get(url_base)

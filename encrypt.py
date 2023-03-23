@@ -12,3 +12,6 @@ class Encrypt:
     def decrypt(self, message: str) -> str:
         fernet = Fernet(self.key)
         return fernet.decrypt(message.encode()).decode()
+
+
+# print(Encrypt().encrypt(input()))

@@ -11,7 +11,7 @@ from .sentinel import (
 
 
 import re
-from typing import TypeVar, Coroutine, Callable, Annotated, Union
+from typing import Optional, TypeVar, Coroutine, Callable, Annotated, Union
 from difflib import SequenceMatcher
 
 from .command_types import GuildChannel
@@ -284,8 +284,10 @@ class FigletFontConverter(commands.Converter):
             return pyfiglet.Figlet(argument)
         except pyfiglet.FontNotFound:
             raise commands.BadArgument(f"{argument} is not a valid font. Please use the autocomplete.")
-        
 
+
+MemberAnnotation = Annotated[discord.Member, commands.converter.MemberConverter()]
+MemberOrAuthorParam = commands.param(converter=MemberAnnotation, default=lambda ctx: ctx.author)
 
 StringAnnotation = Annotated[str, StringArgParse]
 LowerStringParam = commands.param(converter=StringAnnotation.lower)
@@ -305,8 +307,8 @@ OptionalDiscordObjectParam = commands.param(
 URLParam = Annotated[parse.SplitResult, URLConverter()]
 URL = commands.param(converter=URLParam)
 
-URLCleanParam = Annotated[str, URLClean()]
-URLClean = commands.param(converter=URLCleanParam)
+URLCleanAnnotation = Annotated[str, URLClean()]
+URLCleanParam = commands.param(converter=URLCleanAnnotation)
 
 FigletFontParam = Annotated[pyfiglet.Figlet, FigletFontConverter()]
 FigletFont = commands.param(converter=FigletFontParam)

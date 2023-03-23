@@ -1,7 +1,8 @@
 import datetime
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
+from typing import Callable, Union
+from bs4 import Tag
 from discord import (
     VoiceChannel,
     StageChannel,
@@ -75,3 +76,14 @@ class GuildConfigEntry:
 class UserConfigEntry:
     user_id: int
     autoresponse_immune: bool
+
+
+@dataclass(kw_only=True)
+class SteamUser:
+    avatar_url: str
+    username: str
+    persona_name: str
+    custom_url: str
+    time_created: datetime.datetime
+    country_code: str
+    state_code: str

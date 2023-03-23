@@ -1,0 +1,128 @@
+    @commands.hybrid_command()
+    async def news(self, ctx: SentinelContext):
+        url = "https://join1440.com/today"
+        start = time.perf_counter()
+        source = await self.bot.driver.get(url)
+        print(f"Got source in {time.perf_counter() - start} seconds")
+        soup = BeautifulSoup(source, "html.parser")
+        date = soup.select_one("div.newsletterContent > h1.font-primary").text # type: ignore
+        intro = soup.select("html body div#__next main div div div.newsletterContent div.newsletterContentWrap div table tbody tr td table tbody tr td table tbody tr td table.width600.main-container tbody tr td table tbody tr td table tbody tr td table tbody tr td div p") # type: ignore
+        intro_string = intro[1].text # type: ignore
+        primary_items = soup.select("table.width600 > tbody > tr > td > table > tbody > tr > td > table > tbody > tr > td > table > tbody > tr > td > table")
+        secondary_items = soup.select("div.newsletterContentWrap > div > table > tbody > tr > td > table > tbody > tr > td > table")
+
+        print(f"Got items in {time.perf_counter() - start} seconds")
+
+        view = NewsStartView(ctx, date, primary_items, secondary_items)
+        embed = ctx.embed(
+            title=f"1040 News - `{date}`",
+            description=intro_string
+        )
+        embed.url = url
+        await ctx.send(embed=embed, view=view)
+
+
+class NewsStartView(SentinelView):
+    def __init__(
+        self,
+        ctx: SentinelContext,
+        date: str,
+        primary_items: list[Tag],
+        secondary_items: list[Tag],
+    ):
+        super().__init__(ctx)
+        self.date = date
+        self.primary_items = primary_items
+        self.secondary_items = secondary_items
+    
+    @discord.ui.select(
+        options=[
+            discord.SelectOption(label="Need to Know", value="primary", emoji="\N{Newspaper}"),
+            # discord.SelectOption(label="In the Know", value="secondary"),
+        ],
+        placeholder="Please choose a category",
+    )
+    async def category(self, itx: discord.Interaction, select: discord.ui.Select):
+        self.chosen = select.values[0]
+        print(self.chosen)
+        news = self.primary_items if self.chosen == "primary" else self.secondary_items
+
+        data = NewsSegment.from_tags(news ,NewsType.PRIMARY if self.chosen == "primary" else NewsType.SECONDARY)
+
+        view = NewsPaginator(self.ctx, self, self.date, data)
+        await view.update()
+        embed = await view.embed(view.displayed_values)
+        await itx.response.edit_message(embed=embed, view=view)
+        view.message = itx.message
+
+
+class NewsPaginator(Paginator):
+    def __init__(
+        self,
+        ctx: SentinelContext,
+        start: NewsStartView,
+        date: str,
+        values: list[NewsSegment],
+    ):
+        super().__init__(ctx, tuple(values), 1)
+        self.start = start
+        self.date = date
+
+    async def embed(self, value_range: tuple[NewsSegment]) -> discord.Embed:
+        if not value_range:
+            return self.ctx.embed(
+                title="No News Found",
+                description="There are no news items for this category. Please try again later",
+            )
+        value = value_range[0] 
+
+        embed = self.ctx.embed(
+            title=f"1040 News - `{self.date}` - `{'Need to Know' if self.start.chosen == 'primary' else 'In the Know'}` - Page `{self.current_page + 1}/{self.max_page + 1}`"
+        )
+        embed.description = f"**{value.title}**\n{value.body}"
+
+        return embed
+
+
+# @dataclass(kw_only=True)
+# class NewsSegment:
+#     title: str
+#     body: str
+
+#     @staticmethod
+#     def from_tags(tags: list[Tag], t: "NewsType") -> list["NewsSegment"]:
+#         if t == NewsType.PRIMARY:
+#             tags = tags[2:] # skip the banner and first spacer
+#             titles = tags[::3]
+#             bodies = tags[1::3]
+
+#             get_title_text: Callable[[Tag], str] = lambda t: t.find("div > p > span").text # type: ignore
+
+#             def get_body_text(t: Tag) -> str:
+#                 string = ""
+#                 sections: list[Tag] = t.find_all("div > p")[::2]
+#                 for s in sections:
+#                     spans: list[Tag] = s.find_all("span")
+#                     for cx, span in enumerate(spans):
+#                         if cx % 2 == 0:
+#                             string += span.text
+#                         else:
+#                             link = span.find("a")
+#                             string += f"[{link.text}]({link['href']})" # type: ignore
+                
+#                 return string
+            
+#             return [
+#                 NewsSegment(
+#                     title=get_title_text(t), 
+#                     body=get_body_text(b)
+#                 ) for t, b in zip(titles, bodies)
+#             ]
+#         raise NotImplementedError()
+    
+#         # elif t == NewsType.SECONDARY:
+#         #     tags = tags[1:]
+
+# class NewsType(Enum):
+#     PRIMARY = 0
+#     SECONDARY = 1
