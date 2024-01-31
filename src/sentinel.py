@@ -73,7 +73,6 @@ class Sentinel(commands.Bot):
 
         openai.api_key = env.OPENAI_API_KEY
 
-
         super().__init__(
             command_prefix=_get_prefix,
             help_command=None,
@@ -82,10 +81,10 @@ class Sentinel(commands.Bot):
         )
 
     async def get_context(
-        self,
-        origin: Union[discord.Message, discord.Interaction],
-        *,
-        cls: Optional[Type[commands.Context["_SentinelBotT"]]] = None,
+            self,
+            origin: Union[discord.Message, discord.Interaction],
+            *,
+            cls: Optional[Type[commands.Context["_SentinelBotT"]]] = None,
     ) -> Union[commands.Context, "SentinelContext"]:
         return await super().get_context(origin, cls=cls or SentinelContext)
 
@@ -104,7 +103,7 @@ class Sentinel(commands.Bot):
         self.ucm = UserConfigManager(self.apg)
 
     async def reload_extensions(
-        self, ext_dir: str = ".\\src\\ext"
+            self, ext_dir: str = ".\\src\\ext"
     ) -> tuple[list[str], list[str]]:
         loaded_extensions = []
         loaded_utilities = []
@@ -184,19 +183,18 @@ _SentinelBotT = TypeVar("_SentinelBotT", bound=Sentinel, covariant=True)
 
 
 class SentinelContext(commands.Context):
+    guild: discord.Guild
+    bot: Sentinel
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.bot: Sentinel = self.bot
-        self.guild: discord.Guild = self.guild
 
     def embed(
-        self,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        color: Optional[discord.Color] = discord.Color.dark_teal(),
-        files: Optional[list[discord.File]] = None,
+            self,
+            title: Optional[str] = None,
+            description: Optional[str] = None,
+            color: Optional[discord.Color] = discord.Color.dark_teal(),
     ) -> discord.Embed:
-
         embed = discord.Embed(
             title=title,
             description=description,
@@ -228,14 +226,14 @@ class SentinelTree(discord.app_commands.CommandTree):
 
 class SentinelView(discord.ui.View):
     def __init__(
-        self,
-        ctx: SentinelContext,
-        *,
-        timeout: float | None = 600.0,
-        disable_on_timeout: bool = True,
-        any_responder: bool = False,
-        any_channel: bool = False,
-        any_guild: bool = False,
+            self,
+            ctx: SentinelContext,
+            *,
+            timeout: float | None = 600.0,
+            disable_on_timeout: bool = True,
+            any_responder: bool = False,
+            any_channel: bool = False,
+            any_guild: bool = False,
     ):
         self.message: Optional[discord.Message] = None
         self.ctx = ctx
@@ -249,7 +247,7 @@ class SentinelView(discord.ui.View):
             self.on_timeout = self._disable_on_timeout
 
     async def prefab_close_button(
-        self, itx: discord.Interaction, button: discord.ui.Button
+            self, itx: discord.Interaction, button: discord.ui.Button
     ):
         for child in self.children:
             if isinstance(child, (discord.ui.Button, discord.ui.Select)):
@@ -258,13 +256,13 @@ class SentinelView(discord.ui.View):
 
     async def interaction_check(self, itx: discord.Interaction) -> bool:
         if not all(
-            {
-                await super().interaction_check(itx),
-                self.ctx.author == itx.user or self.any_responder,
-                self.ctx.channel == itx.channel or self.any_channel,
-                self.ctx.guild == itx.guild or self.any_guild,
-                not itx.user.bot,
-            }
+                {
+                    await super().interaction_check(itx),
+                    self.ctx.author == itx.user or self.any_responder,
+                    self.ctx.channel == itx.channel or self.any_channel,
+                    self.ctx.guild == itx.guild or self.any_guild,
+                    not itx.user.bot,
+                }
         ):
             await itx.response.send_message(
                 "You do not have permission to use this screen.",
@@ -286,11 +284,11 @@ class SentinelCog(commands.Cog):
     hidden: bool
 
     def __init__(
-        self,
-        bot: Sentinel,
-        emoji: Union[discord.Emoji, str] | None = None,
-        *,
-        hidden: bool | None = None,
+            self,
+            bot: Sentinel,
+            emoji: Union[discord.Emoji, str] | None = None,
+            *,
+            hidden: bool | None = None,
     ):
         self.bot = bot
         self.emoji = str(emoji or self.emoji)
@@ -298,9 +296,9 @@ class SentinelCog(commands.Cog):
         super().__init__()
 
     def __init_subclass__(
-        cls,
-        emoji: Union[discord.Emoji, str] = "\N{Black Question Mark Ornament}",
-        hidden: bool = False,
+            cls,
+            emoji: Union[discord.Emoji, str] = "\N{Black Question Mark Ornament}",
+            hidden: bool = False,
     ) -> None:
         cls.emoji = str(emoji)
         cls.hidden = hidden
@@ -333,10 +331,10 @@ class SentinelAIOSession(aiohttp.ClientSession):
             },
         )
         self.cache: aioredis.Redis
-    
+
     async def _build_cache(self):
         self.cache = await aioredis.from_url("redis://localhost", decode_responses=True)
-    
+
     async def get(self, url: str, /, **kwargs) -> str:
         get_cache = kwargs.pop("get_cache", True)
         set_cache = kwargs.pop("set_cache", True)
@@ -345,19 +343,19 @@ class SentinelAIOSession(aiohttp.ClientSession):
             cached = await self.cache.get(url)
             if cached is not None and set_cache:
                 return await self.get(url, get_cache=False, set_cache=True, **kwargs)
-            
+
         response = await (await super().get(url, **kwargs)).read()
 
         if set_cache:
             await self.cache.set(url, response)
-            self.cache.expire(url, int(datetime.now().timestamp() + 60*60))
-        
+            await self.cache.expire(url, int(datetime.now().timestamp() + 60 * 60))
+
         return response.decode()
-    
+
     async def getjson(self, url: str, /, **kwargs) -> dict[str, Any]:
-            
+
         response = await self.get(url, **kwargs)
-        js:dict[str, Any] = json.loads(response)
+        js: dict[str, Any] = json.loads(response)
 
         for key in kwargs.pop("route", []):
             js = js[key]
@@ -401,12 +399,15 @@ class SentinelDriver:
         buf.seek(0)
         return buf
 
+
 SENTINEL_MESSAGE_CACHE_KEY = tuple[int, int]
 SENTINEL_MESSAGE_CACHE_VALUE = tuple[int, int, str, frozenset[str], int]
 SENTINEL_MESSAGE_CACHE = dict[SENTINEL_MESSAGE_CACHE_KEY, set[SENTINEL_MESSAGE_CACHE_VALUE]]
 
+
 class SentinelMessageCache(SENTINEL_MESSAGE_CACHE):
-    def __init__(self, data: SENTINEL_MESSAGE_CACHE = dict(), *, limit: int = 100):
+    def __init__(self, data: SENTINEL_MESSAGE_CACHE = None, *, limit: int = 100):
+        data = data or {}
         self.limit = limit
         super().__init__(data)
 
@@ -418,8 +419,8 @@ class SentinelMessageCache(SENTINEL_MESSAGE_CACHE):
             self[__key].remove(self._get_min(self[__key]))
         self[__key].add(__value)
 
-
-    def __getitem__(self, __key: Union[SENTINEL_MESSAGE_CACHE_KEY, "SentinelMessageCacheKey"]) -> set[SENTINEL_MESSAGE_CACHE_VALUE]:
+    def __getitem__(self, __key: Union[SENTINEL_MESSAGE_CACHE_KEY, "SentinelMessageCacheKey"]) -> set[
+        SENTINEL_MESSAGE_CACHE_VALUE]:
         if isinstance(__key, SentinelMessageCacheKey):
             __key = __key.dismantle()
         try:
@@ -431,10 +432,10 @@ class SentinelMessageCache(SENTINEL_MESSAGE_CACHE):
 
     def _dismantle_set(self, __value: set["SentinelMessageCacheValue"]) -> set[SENTINEL_MESSAGE_CACHE_VALUE]:
         return set(map(lambda x: x.dismantle(), __value))
-    
+
     def _get_min(self, __value: set[SENTINEL_MESSAGE_CACHE_VALUE]) -> SENTINEL_MESSAGE_CACHE_VALUE:
         return min(__value, key=lambda x: x[4])
-    
+
 
 @dataclass
 class SentinelMessageCacheKey:
@@ -455,14 +456,14 @@ class SentinelMessageCacheValue:
 
     def dismantle(self) -> SENTINEL_MESSAGE_CACHE_VALUE:
         return self.message_id, self.author_id, self.content, self.attachment_urls, self.timestamp
-    
+
     def __init__(
-        self,
-        message_id: int,
-        author_id: int,
-        content: str,
-        attachment_urls: set[str] | frozenset[str],
-        timestamp: int,
+            self,
+            message_id: int,
+            author_id: int,
+            content: str,
+            attachment_urls: set[str] | frozenset[str],
+            timestamp: int,
     ):
         self.message_id = message_id
         self.author_id = author_id
@@ -472,6 +473,7 @@ class SentinelMessageCacheValue:
         else:
             self.attachment_urls = attachment_urls
         self.timestamp = timestamp
+
 
 async def _get_prefix(bot: Sentinel, message: discord.Message) -> str:
     if message.guild is None:

@@ -125,7 +125,6 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
 
         view = GiveCoinsConfirmation(ctx, self.bot.udm, member, ctx.author, amount)
         await ctx.send(content=member.mention, embed=embed, view=view)
-
     
     @coins.command()
     @commands.guild_only()
@@ -147,8 +146,6 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
                 color=discord.Color.red(),
             )
         await ctx.send(embed=embed)
-        
-
 
     @coins.command()
     @commands.guild_only()
@@ -225,6 +222,7 @@ class Coins(SentinelCog, emoji="\N{Banknote with Dollar Sign}"):
         await ctx.send(f"Set `{member}`'s balance to \N{Coin}`{amount:,}`")
 
 
+# noinspection PyUnusedLocal
 class GiveCoinsConfirmation(SentinelView):
     def __init__(
         self,

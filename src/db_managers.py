@@ -1,15 +1,10 @@
 import datetime
 from enum import Enum
-import random
 import time
 from typing import Optional, overload, Literal
 import asyncpg
 
-from config import DEFAULT_PREFIX
-
-from .command_types import TagEntry, MetaTagEntry, GuildEntry, UserEntry, GuildConfigEntry, UserConfigEntry
-import discord
-
+from .command_types import TagEntry, MetaTagEntry, GuildEntry, GuildConfigEntry
 
 class SentinelDatabase:
     def __init__(self, apg: asyncpg.Pool):
@@ -21,7 +16,7 @@ class UserDataManager(SentinelDatabase):
 
     async def ensure_user(self, user_id: int) -> None:
         await self.apg.execute(
-            "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO user_data (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
             user_id,
             0,
         )
@@ -40,12 +35,12 @@ class UserDataManager(SentinelDatabase):
         self, user_id: int, create_if_unfound: bool = True
     ) -> int | None:
         result = await self.apg.fetchrow(
-            "SELECT balance FROM users WHERE user_id = $1", user_id
+            "SELECT balance FROM user_data WHERE user_id = $1", user_id
         )
         if result is None:
             if create_if_unfound:
                 await self.apg.execute(
-                    "INSERT INTO users (user_id, balance) VALUES ($1, $2)", user_id, 0
+                    "INSERT INTO user_data (user_id, balance) VALUES ($1, $2)", user_id, 0
                 )
                 return 0
             else:
@@ -58,13 +53,13 @@ class UserDataManager(SentinelDatabase):
     ) -> None:
         if create_if_unfound:
             await self.apg.execute(
-                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = $2",
+                "INSERT INTO user_data (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = $2",
                 user_id,
                 balance,
             )
         else:
             await self.apg.execute(
-                "UPDATE users SET balance = $2 WHERE user_id = $1", user_id, balance
+                "UPDATE user_data SET balance = $2 WHERE user_id = $1", user_id, balance
             )
 
     async def modify_balance(
@@ -72,13 +67,13 @@ class UserDataManager(SentinelDatabase):
     ) -> None:
         if create_if_unfound:
             await self.apg.execute(
-                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance + $2",
+                "INSERT INTO user_data (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = user_data.balance + $2",
                 user_id,
                 amount,
             )
         else:
             await self.apg.execute(
-                "UPDATE users SET balance = users.balance + $2 WHERE user_id = $1",
+                "UPDATE user_data SET balance = user_data.balance + $2 WHERE user_id = $1",
                 user_id,
                 amount,
             )
@@ -108,46 +103,28 @@ class UserDataManager(SentinelDatabase):
         giver_id: int,
         receiver_id: int,
         amount: int,
-        create_if_unfound: bool = True,
     ) -> tuple[bool, int | None, int | None]:
-        giver_bal = await self.get_balance(giver_id, create_if_unfound)
-        rec_bal = await self.get_balance(receiver_id, create_if_unfound)
-        # Either the giver doesn't have an account and we're not creating one, or they don't have enough money anyway
-        # The balances will only be `None` if `create_if_unfound` is `False`
-        if (
-            (giver_bal is None)
-            or (rec_bal is None)
-            or (giver_bal is not None and giver_bal < amount)
-        ):
-            return (False, giver_bal, rec_bal)
+        giver_bal = await self.get_balance(giver_id, create_if_unfound=True)
+        rec_bal = await self.get_balance(receiver_id, create_if_unfound=True)
 
-        if create_if_unfound:
-            await self.apg.execute(
-                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance - $2",
-                giver_id,
-                amount,
-            )
-            await self.apg.execute(
-                "INSERT INTO users (user_id, balance) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET balance = users.balance + $2",
-                receiver_id,
-                amount,
-            )
-        else:
-            await self.apg.execute(
-                "UPDATE users SET balance = users.balance - $2 WHERE user_id = $1",
-                giver_id,
-                amount,
-            )
-            await self.apg.execute(
-                "UPDATE users SET balance = users.balance + $2 WHERE user_id = $1",
-                receiver_id,
-                amount,
-            )
-        return (True, giver_bal - amount, rec_bal + amount)
+        # here, we assume that the balances have already
+        # been checked for validity (ie, this person has enough to give 5 away)
+
+        await self.apg.execute(
+            "UPDATE user_data SET balance = user_data.balance - $2 WHERE user_id = $1",
+            giver_id,
+            amount,
+        )
+        await self.apg.execute(
+            "UPDATE user_data SET balance = user_data.balance + $2 WHERE user_id = $1",
+            receiver_id,
+            amount,
+        )
+        return True, giver_bal - amount, rec_bal + amount
 
     async def add_tokens(self, user_id: int, amount: int) -> int:
         tokens: int = int(await self.apg.execute(
-            "INSERT INTO users (user_id, tokens) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET tokens = users.tokens + $2 RETURNING tokens",
+            "INSERT INTO user_data (user_id, tokens) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET tokens = user_data.tokens + $2 RETURNING tokens",
             user_id,
             amount,
         ))
@@ -155,7 +132,7 @@ class UserDataManager(SentinelDatabase):
 
     async def get_tokens(self, user_id: int) -> int:
         tokens: int = await self.apg.fetchval(
-            "SELECT tokens FROM users WHERE user_id = $1",
+            "SELECT tokens FROM user_data WHERE user_id = $1",
             user_id,
         )
         return tokens
@@ -163,7 +140,7 @@ class UserDataManager(SentinelDatabase):
     async def set_tokens(self, user_id: int, amount: int) -> int:
         await self.apg.execute(
             """
-            INSERT INTO users (user_id, tokens) VALUES ($1, $2)
+            INSERT INTO user_data (user_id, tokens) VALUES ($1, $2)
             ON CONFLICT (user_id) DO UPDATE SET tokens = $2
             """
         )
@@ -173,14 +150,14 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         result = await self.apg.fetchval(
             """
-            SELECT next_hourly FROM users WHERE user_id = $1
+            SELECT next_hourly FROM user_data WHERE user_id = $1
             """,
             user_id,
         )
         if result is not None and datetime.datetime.utcnow() > result:
             await self.apg.execute(
                 """
-                UPDATE users SET next_hourly = $2, balance = balance + $3 WHERE user_id = $1
+                UPDATE user_data SET next_hourly = $2, balance = balance + $3 WHERE user_id = $1
                 """,
                 user_id,
                 datetime.datetime.utcnow() + datetime.timedelta(hours=1),
@@ -193,7 +170,7 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         return await self.apg.fetchval(
             """
-            SELECT next_hourly FROM users WHERE user_id = $1
+            SELECT next_hourly FROM user_data WHERE user_id = $1
             """,
             user_id,
         ) # type: ignore
@@ -202,14 +179,14 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         result = await self.apg.fetchval(
             """
-            SELECT next_daily FROM users WHERE user_id = $1
+            SELECT next_daily FROM user_data WHERE user_id = $1
             """,
             user_id,
         )
         if result is not None and datetime.datetime.utcnow() > result:
             await self.apg.execute(
                 """
-                UPDATE users SET next_daily = $2, balance = balance + $3 WHERE user_id = $1
+                UPDATE user_data SET next_daily = $2, balance = balance + $3 WHERE user_id = $1
                 """,
                 user_id,
                 datetime.datetime.utcnow() + datetime.timedelta(days=1),
@@ -222,7 +199,7 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         return await self.apg.fetchval(
             """
-            SELECT next_daily FROM users WHERE user_id = $1
+            SELECT next_daily FROM user_data WHERE user_id = $1
             """,
             user_id,
         ) # type: ignore
@@ -231,14 +208,14 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         result = await self.apg.fetchval(
             """
-            SELECT next_weekly FROM users WHERE user_id = $1
+            SELECT next_weekly FROM user_data WHERE user_id = $1
             """,
             user_id,
         )
         if result is not None and datetime.datetime.utcnow() > result:
             await self.apg.execute(
                 """
-                UPDATE users SET next_weekly = $2, balance = balance + $3 WHERE user_id = $1
+                UPDATE user_data SET next_weekly = $2, balance = balance + $3 WHERE user_id = $1
                 """,
                 user_id,
                 datetime.datetime.utcnow() + datetime.timedelta(days=7),
@@ -251,7 +228,7 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         return await self.apg.fetchval(
             """
-            SELECT next_weekly FROM users WHERE user_id = $1
+            SELECT next_weekly FROM user_data WHERE user_id = $1
             """,
             user_id,
         ) # type: ignore
@@ -260,14 +237,14 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         result = await self.apg.fetchval(
             """
-            SELECT next_monthly FROM users WHERE user_id = $1
+            SELECT next_monthly FROM user_data WHERE user_id = $1
             """,
             user_id,
         )
         if result is not None and datetime.datetime.utcnow() > result:
             await self.apg.execute(
                 """
-                UPDATE users SET next_monthly = $2, balance = balance + $3 WHERE user_id = $1
+                UPDATE user_data SET next_monthly = $2, balance = balance + $3 WHERE user_id = $1
                 """,
                 user_id,
                 datetime.datetime.utcnow() + datetime.timedelta(days=30),
@@ -280,7 +257,7 @@ class UserDataManager(SentinelDatabase):
         await self.ensure_user(user_id)
         return await self.apg.fetchval(
             """
-            SELECT next_monthly FROM users WHERE user_id = $1
+            SELECT next_monthly FROM user_data WHERE user_id = $1
             """,
             user_id,
         ) # type: ignore

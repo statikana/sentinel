@@ -18,14 +18,14 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
 
     @commands.hybrid_command()
     async def help(
-        self,
-        ctx: SentinelContext,
-        *,
-        query: TypedHybrid
-        | SentinelCog = commands.param(
-            default=None,
-            converter=UniversalComponentConverter,
-        ),
+            self,
+            ctx: SentinelContext,
+            *,
+            query: TypedHybrid
+                   | SentinelCog = commands.param(
+                default=None,
+                converter=UniversalComponentConverter,
+            ),
     ):
         """Shows this message"""
         if query is None:
@@ -47,9 +47,19 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
         await ctx.send(embed=embed, view=view)
 
     async def send_command_help(
-        self, ctx: SentinelContext, command: TypedHybridCommand
+            self, ctx: SentinelContext, command: TypedHybridCommand
     ) -> None:
         """Shows all info on one command"""
+        embed = await self.command_help_embed(ctx, command)
+        view = SentinelView(ctx)
+        if command.parent is not None:
+            view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
+        view.add_item(self.select_cog_item(ctx))
+        await ctx.send(embed=embed, view=view)
+
+    async def command_help_embed(
+            self, ctx: SentinelContext, command: TypedHybridCommand
+    ):
         title = f"Help: `{command.name}` [`{command.qualified_name}`]"
 
         embed = ctx.embed(
@@ -62,11 +72,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
             inline=False,
         )
         add_command_params(embed, command)
-        view = SentinelView(ctx)
-        if command.parent is not None:
-            view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
-        view.add_item(self.select_cog_item(ctx))
-        await ctx.send(embed=embed, view=None)
+        return embed
 
     async def send_group_help(self, ctx: SentinelContext, group: TypedHybridGroup):
         embed = ctx.embed(
@@ -108,7 +114,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
                 )
             )
         sel = discord.ui.Select(
-            placeholder="Select a Cog",
+            placeholder="- Select a Cog -",
             options=options,
             min_values=1,
             max_values=1,
@@ -132,7 +138,7 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
         return sel
 
     def select_command_item_from_group(
-        self, ctx: SentinelContext, group: TypedHybridGroup | None
+            self, ctx: SentinelContext, group: TypedHybridGroup | None
     ) -> discord.ui.Select:
         iter_commands: set[TypedHybridCommand] = set()
         if group is None:
@@ -154,44 +160,31 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
                 )
             )
         sel = discord.ui.Select(
-            placeholder="Select a Command from this Group",
+            placeholder="- Select a Command from this Group -",
             options=options,
             min_values=1,
             max_values=1,
         )
 
-        async def callback(interaction: discord.Interaction):
-            itx = interaction
-            if command is None or isinstance(command, commands.GroupMixin):
+        async def callback(itx: discord.Interaction):
+            found_command = ctx.bot.get_command(sel.values[0])
+            if found_command is None or isinstance(found_command, commands.GroupMixin):
                 return
 
-            embed = ctx.embed(
-                title=f"Help: `{command.name}` [`{command.qualified_name}`]",
-                description=get_command_description(command, False),
-            )
-            embed.add_field(
-                name="Usage",
-                value=get_command_usage(ctx, command),
-                inline=False,
-            )
-            view = SentinelView(ctx)
-            if command.parent is not None:
-                view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
-            view.add_item((self.select_cog_item(ctx)))
-            await itx.response.edit_message(embed=embed, view=view)
+            await itx.response.edit_message(embed=await self.command_help_embed(ctx, found_command))
 
         sel.callback = callback
         return sel
 
     def select_command_item_from_cog(
-        self, ctx: SentinelContext, cog: SentinelCog
+            self, ctx: SentinelContext, cog: SentinelCog
     ) -> discord.ui.Select:
         options: list[discord.SelectOption] = []
         for command in ctx.bot.walk_commands():
             if (
-                isinstance(command, commands.GroupMixin)
-                or command.hidden
-                or not isinstance(command, commands.HybridCommand)
+                    isinstance(command, commands.GroupMixin)
+                    or command.hidden
+                    or not isinstance(command, commands.HybridCommand)
             ):
                 continue
             if command.cog is None or command.cog.qualified_name != cog.qualified_name:
@@ -205,34 +198,18 @@ class Help(SentinelCog, emoji="\N{White Question Mark Ornament}", hidden=True):
                 )
             )
         sel = discord.ui.Select(
-            placeholder="Select a Command from this Cog",
+            placeholder="- Select a Command from this Cog -",
             options=options,
             min_values=1,
             max_values=1,
         )
 
-        async def callback(interaction: discord.Interaction):
-            itx = interaction
-            command = ctx.bot.get_command(sel.values[0])
-            if command is None or isinstance(command, commands.GroupMixin):
+        async def callback(itx: discord.Interaction):
+            found_command = ctx.bot.get_command(sel.values[0])
+            if found_command is None or isinstance(found_command, commands.GroupMixin):
                 return
 
-            embed = ctx.embed(
-                title=f"Help: `{command.name}` [`{command.qualified_name}`]",
-                description=get_command_description(command, False),
-            )
-            embed.add_field(
-                name="Usage",
-                value=get_command_usage(ctx, command),
-                inline=False,
-            )
-            view = SentinelView(ctx)
-            # if command.parent is not None:
-            #     view.add_item(self.select_command_item_from_group(ctx, command.parent))  # type: ignore
-            # This was accessed via the cog, so we don't need to go back to the group
-            view.add_item(self.select_command_item_from_cog(ctx, command.cog))
-            view.add_item(self.select_cog_item(ctx))
-            await itx.response.edit_message(embed=embed, view=view)
+            await itx.response.edit_message(embed=await self.command_help_embed(ctx, found_command))
 
         sel.callback = callback
         return sel
@@ -247,12 +224,15 @@ def add_arrow_on_selected(select: discord.ui.Select, chosen: discord.SelectOptio
 
 
 def get_command_usage(ctx: SentinelContext, command: TypedHybridCommand) -> str:
+    # TODO: Fix  v
+    # does not work with custom converters (spec. src.converters.FigletFontConverter)
+    # -> <font: <src.converters.FigletFontConverter object at 0x000001A6AD305FD0> NO
     formatted_params = ""
     for name, param in command.params.items():
         if command.app_command is None:
             continue
         param_type = get_param_repr(param)
-        if not param.default in (param.empty, None):
+        if param.default not in (param.empty, None):
             formatted_params += f"[{name}: {param_type}] "
         else:
             formatted_params += f"<{name}: {param_type}> "
